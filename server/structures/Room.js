@@ -8,84 +8,74 @@ const sha1 = require('sha1');
  */
 
 class Room {
-  constructor(p, server, _id, count, settings = {}) {
+  constructor(p, server, _id, count, set) {
     this.server = server;
     this._id = _id;
     this.count = count;
-    const isLobby = this._id.toLowerCase().includes('lobby');
-    if (isLobby) {
-      this.settings = {
-        chat: true,
-        color: bgColor,
-        crownsolo: false,
-        lobby: true,
-        visible: true
-      };
-    } else {
-      this.settings = {
-        chat: settings.chat != null ? settings.chat : true,
-        color: settings.color || bgColor,
-        crownsolo: settings.crownsolo != null ? settings.crownsolo : false,
-        lobby: false,
-        visible: settings.visible != null ? settings.visible : true
-      };
-    }
-    this.settings.black = this.settings.lobby ? false : this._id.toLowerCase().includes('black');
-    // eslint-disable-next-line no-extra-parens
-    this.settings.original = !this.settings.black ? (!this.settings.lobby ? this._id.toLowerCase().includes('original') : false) : false;
-    this.crown = null;
+    this.settings = {
+      chat: true,
+      color: '#ecfaed',
+      visible: true,
+      crownsolo: false,
+      lobby: false,
+      ...set
+    };
     this.ppl = [];
-    this.chat = new Chat();
+    this.chat = {
+      messages: []
+    };
+    this.crown = null;
   }
-  newParticipant(p) {
-    this.count++;
-    const pR = new ParticipantRoom(
-      sha1(Date.now()).substring(0, 20),
-      p.name, p.color, p._id
-    );
-    this.ppl.push(pR);
-    this.server.broadcastTo({
-      m: 'p',
-      color: p.color,
-      id: pR.id,
-      name: p.name,
-      x: 0,
-      y: 0,
-      _id: p._id
-    }, this.ppl.map(tpR => tpR._id), [p._id]);
-    return pR;
+
+  update(set) {
+    if (set.visible !== undefined) this.settings.visible = !!set.visible;
+    if (set.chat !== undefined) this.settings.chat = !!set.chat;
+    if (set.crownsolo !== undefined) this.settings.crownsolo = !!set.crownsolo;
+    if (set.color) this.settings.color = set.color;
   }
+
   findParticipant(_id) {
-    return this.ppl.find(p => p._id == _id);
+    return this.ppl.find(p => p._id === _id);
   }
+
+  newParticipant(p) {
+    const participant = new ParticipantRoom(
+      this.count++,
+      p.name,
+      p.color,
+      p._id
+    );
+    this.ppl.push(participant);
+    return participant;
+  }
+
   removeParticipant(_id) {
-    const pR = this.findParticipant(_id);
-    if (!pR) return;
-    this.count--;
-    this.ppl = this.ppl.filter(p => p._id != _id);
-    this.server.broadcastTo({
-      m: 'bye',
-      p: pR.id
-    }, this.ppl.map(tpR => tpR._id));
+    const index = this.ppl.findIndex(p => p._id === _id);
+    if (index !== -1) {
+      this.ppl.splice(index, 1);
+      // If crown holder leaves, pass crown to next person or remove it
+      if (this.crown && this.crown.userId === _id) {
+        if (this.ppl.length > 0) {
+          const nextParticipant = this.ppl[0];
+          this.crown = {
+            participantId: nextParticipant.id,
+            userId: nextParticipant._id,
+            time: Date.now()
+          };
+        } else {
+          this.crown = null;
+        }
+      }
+    }
   }
-  update(settings = {}) {
-    this.settings = Object.assign(this.settings, {
-      chat: settings.chat != null ? settings.chat : this.settings.chat,
-      color: settings.color || this.settings.color,
-      crownsolo: settings.crownsolo != null ? settings.crownsolo : this.settings.crownsolo,
-      visible: settings.visible != null ? settings.visible : this.settings.visible
-    });
-  }
+
   generateJSON() {
-    const obj = {
+    return {
       _id: this._id,
       settings: this.settings,
+      crown: this.crown,
       count: this.count
     };
-    if (this.crown) {
-      obj.crown = this.crown;
-    }
-    return obj;
   }
 }
 

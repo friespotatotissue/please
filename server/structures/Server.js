@@ -85,59 +85,50 @@ class Server extends WebSocket.Server {
       }
       // New Room
       let r = this.getRoom(data._id);
-      if (!r) r = this.newRoom(data, p);
+      if (!r) {
+        r = this.newRoom(data, p);
+        // Only set crown for new rooms
+        if (!r.settings.lobby) {
+          r.crown = {
+            participantId: r.findParticipant(p._id).id,
+            userId: p._id,
+            time: Date.now()
+          };
+        }
+      }
       let pR = r.findParticipant(p._id);
       if (!pR) pR = r.newParticipant(p);
       p.room = r._id;
-      if (!r.settings.lobby && pR) {
-        r.crown = {
-          participantId: pR.id,
-          userId: p.id,
-          time: new Date()
-        };
-        this.rooms.set(r._id, r);
-      }
-      if (r._id.toLowerCase().includes('black')) {
-        // Send offline note quota because fuck it
-        s.sendObject({
-          m: 'nq',
-          allowance: 8000,
-          max: 24000,
-          histLen: 3
-        });
-      } else {
-        // Send lobby notequota until told otherwise
-        s.sendObject({
-          m: 'nq',
-          allowance: 200,
-          max: 600,
-          histLen: 0
-        });
-      }
-      // Clear Chat
-      s.sendObject({
-        m: 'c'
-      }, () => {
-        const chatobjs = [];
-        for (let i = 0; i < (r.chat.messages.length > 50 ? 50 : r.chat.messages.length); i++) {
-          chatobjs.unshift(r.chat.messages[i]);
-        }
-        return s.sendArray(chatobjs);
-      });
-      return s.sendObject({
+
+      // Send room info to all participants
+      const roomInfo = {
         m: 'ch',
         ch: r.generateJSON(),
-        p: r.findParticipant(p._id).id,
+        p: pR.id,
         ppl: r.ppl.length > 0 ? r.ppl : null
-      });
+      };
+
+      // Broadcast room update to all participants
+      this.broadcastTo(roomInfo, r.ppl.map(tpR => tpR._id));
+
+      return s.sendObject(roomInfo);
     }
     if (data.m == 'chset') {
       const p = this.getParticipant(s);
       if (!p) return;
       const r = this.getRoom(p.room);
       if (!r) return;
-      if (r.crown && r.crown.userId != p._id) return;
+      // Only allow crown holder to change settings
+      if (!r.crown || r.crown.userId !== p._id) return;
+      
       r.update(data.set);
+      // Broadcast the updated settings to all participants
+      const roomInfo = {
+        m: 'ch',
+        ch: r.generateJSON(),
+        ppl: r.ppl.length > 0 ? r.ppl : null
+      };
+      this.broadcastTo(roomInfo, r.ppl.map(tpR => tpR._id));
     }
     if (data.m == 'a') {
       const p = this.getParticipant(s);
@@ -211,44 +202,21 @@ class Server extends WebSocket.Server {
     }
     if (data.m == 'userset') {
       const p = this.getParticipant(s);
-      if (!p) {
-        console.error('No participant found for userset');
-        return;
-      }
+      if (!p) return;
 
-      // Validate and sanitize the name
       if (data.set.name) {
         const sanitizedName = this.removeTextHell(data.set.name).trim();
         if (sanitizedName.length > 250 || !sanitizedName) {
-          s.sendObject({
-            m: 'notification',
-            title: 'Error',
-            text: 'Invalid name. Name must not be empty and less than 250 characters.',
-            duration: 3000
-          });
-          return;
+          data.set.name = 'Anonymous';
         }
-        
-        // Try to update the participant
-        const success = p.updateUser(sanitizedName, data.set.color);
-        if (!success) {
-          s.sendObject({
-            m: 'notification',
-            title: 'Error',
-            text: 'Failed to update name. Please try again.',
-            duration: 3000
-          });
-          return;
-        }
+        p.updateUser(sanitizedName, data.set.color);
       }
 
-      // Update room participant if in a room
       const r = this.getRoom(p.room);
       if (r) {
         const pR = r.findParticipant(p._id);
         if (pR) {
           pR.updateUser(p.name, p.color);
-          // Broadcast the update to all participants in the room
           this.broadcastTo({
             m: 'p',
             color: p.color,
@@ -258,14 +226,6 @@ class Server extends WebSocket.Server {
           }, r.ppl.map(tpR => tpR._id));
         }
       }
-
-      // Send confirmation to the user
-      s.sendObject({
-        m: 'notification',
-        title: 'Success',
-        text: 'Name updated successfully',
-        duration: 2000
-      });
     }
     if (data.m == 't') {
       return s.sendObject({
