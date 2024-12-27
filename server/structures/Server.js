@@ -83,10 +83,19 @@ class Server extends WebSocket.Server {
         if (!pR) pR = r.newParticipant(p);
         p.room = r._id;
         
-        // Set crown for room creator
-        if (!r.settings.lobby && r.crown && r.crown.userId === p._id && !r.crown.participantId) {
-          r.crown.participantId = pR.id;
-          this.rooms.set(r._id, r);
+        // Update crown handling
+        if (!r.settings.lobby && r.crown) {
+          if (r.crown.userId === p._id) {
+            r.crown.participantId = pR.id;
+            r.crown.clientId = s.clientId;
+            this.rooms.set(r._id, r);
+            
+            // Broadcast crown update to all participants
+            this.broadcastTo({
+              m: 'ch',
+              ch: r.generateJSON()
+            }, r.ppl.map(tpR => tpR._id));
+          }
         }
         
         if (r._id.toLowerCase().includes('black')) {
@@ -128,12 +137,16 @@ class Server extends WebSocket.Server {
         if (!p) return;
         const r = this.getRoom(p.room);
         if (!r) return;
-        if (r.crown && r.crown.userId != p._id) return;
+        
+        // Only allow crown holder to change settings
+        if (!r.crown || (r.crown.userId !== p._id && r.crown.clientId !== s.clientId)) {
+          return;
+        }
         
         // Update room settings
         r.update(data.set);
         
-        // Broadcast the update to all participants with error handling
+        // Broadcast the update to all participants
         const updateMsg = {
           m: 'ch',
           ch: r.generateJSON(),

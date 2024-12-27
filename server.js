@@ -16,7 +16,10 @@ const io = require('socket.io')(http, {
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
-    reconnectionDelayMax: 5000
+    reconnectionDelayMax: 5000,
+    connectTimeout: 45000,
+    maxHttpBufferSize: 1e8,
+    path: '/socket.io'
 });
 
 // Import original server structures
@@ -95,7 +98,7 @@ io.on('connection', (socket) => {
 
     // Store client ID
     socket.clientId = socket.handshake.query.clientId;
-
+    
     // Create a Socket wrapper instance
     const socketWrapper = new Socket(wsServer, wsWrapper, {
         headers: {
@@ -113,10 +116,9 @@ io.on('connection', (socket) => {
             try {
                 const msg = JSON.parse(data);
                 if (msg[0] && msg[0].m === "hi") {
-                    // Store the client ID when they say hi
                     socket.clientId = msg[0].clientId;
                 }
-                socketWrapper.emit('message', data);
+                wsServer.handleData(socketWrapper, msg);
             } catch (err) {
                 console.error('Error processing message:', err);
             }
@@ -125,8 +127,13 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', (reason) => {
         console.log('Client disconnected:', socket.id, 'Reason:', reason);
-        socketWrapper.emit('close');
-        wsServer.sockets.delete(socketWrapper);
+        // Don't immediately remove the socket from the server
+        setTimeout(() => {
+            if (!socket.connected) {
+                socketWrapper.emit('close');
+                wsServer.sockets.delete(socketWrapper);
+            }
+        }, 5000); // Give 5 seconds for potential reconnection
     });
 
     socket.on('error', (error) => {
@@ -134,7 +141,6 @@ io.on('connection', (socket) => {
         socketWrapper.emit('error', error);
     });
 
-    // Improved reconnection handling
     socket.on('reconnect_attempt', () => {
         socket.io.opts.query = {
             clientId: socket.clientId
@@ -143,10 +149,6 @@ io.on('connection', (socket) => {
 
     socket.on('reconnect', (attemptNumber) => {
         console.log('Client reconnected:', socket.id, 'Attempt:', attemptNumber);
-        // Re-establish room state
-        if (socket.lastRoom) {
-            socket.join(socket.lastRoom);
-        }
     });
 });
 

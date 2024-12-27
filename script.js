@@ -1232,9 +1232,14 @@ Rect.prototype.contains = function(x, y) {
 
 	// Handle crown ownership based on client ID
 	gClient.on("ch", function(msg) {
-		if (msg.ch.crown && msg.ch.crown.clientId === gClient.clientId) {
+		if (msg.ch.crown && msg.ch.crown.clientId === gClient.clientId && msg.ch.crown.userId === gClient.user._id) {
 			// This client is the true owner
 			msg.ch.crown.participantId = gClient.participantId;
+			// Show room settings button only for crown holder
+			document.getElementById("room-settings-btn").style.display = "block";
+		} else {
+			// Hide room settings button for non-crown holders
+			document.getElementById("room-settings-btn").style.display = "none";
 		}
 	});
 
