@@ -25,8 +25,14 @@ app.use(cors());
 // Serve static files
 app.use(express.static(__dirname));
 
-// Create WebSocket server instance
-const wsServer = new Server();
+// Create WebSocket server instance with the HTTP server
+class CustomServer extends Server {
+    constructor(httpServer) {
+        super({ server: httpServer }); // Pass the HTTP server to WebSocket.Server
+    }
+}
+
+const wsServer = new CustomServer(http);
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
