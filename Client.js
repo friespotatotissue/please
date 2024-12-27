@@ -79,13 +79,13 @@ Client.prototype.connect = function() {
 	try {
 		if(typeof module !== "undefined") {
 			// nodejsicle
-			this.ws = new WebSocket('ws://localhost:8080', {
+			this.ws = new WebSocket('wss://please-production.up.railway.app', {
 				"origin": "http://www.multiplayerpiano.com",
 				"user-agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36"
 			});
 		} else {
 			// browseroni
-			this.ws = new WebSocket('ws://localhost:8080');
+			this.ws = new WebSocket('wss://please-production.up.railway.app');
 		}
 	} catch (err) {
 		console.error("WebSocket Connection Error:", err);
