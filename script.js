@@ -417,7 +417,7 @@ Rect.prototype.contains = function(x, y) {
 					// Create and connect nodes
 					this.masterGain = this.context.createGain();
 					this.masterGain.connect(this.context.destination);
-					this.masterGain.gain.value = this.volume;
+					this.masterGain.gain.value = this.volume || 0.6; // Use default volume if not set
 
 					this.limiterNode = this.context.createDynamicsCompressor();
 					this.limiterNode.threshold.value = -10;
@@ -548,7 +548,9 @@ Rect.prototype.contains = function(x, y) {
 
 	AudioEngineWeb.prototype.setVolume = function(vol) {
 		AudioEngine.prototype.setVolume.call(this, vol);
-		this.masterGain.gain.value = this.volume;
+		if (this.context && this.masterGain) {
+			this.masterGain.gain.value = this.volume;
+		}
 	};
 
 	AudioEngineWeb.prototype.resume = function() {
@@ -1580,11 +1582,18 @@ Rect.prototype.contains = function(x, y) {
 
 
 	var volume_slider = new VolumeSlider(document.getElementById("volume"), function(v) {
-		gPiano.audio.setVolume(v);
-		gPiano.audio2.setVolume(v);
+		if (gPiano && gPiano.audio) {
+			gPiano.audio.setVolume(v);
+		}
+		if (gPiano && gPiano.audio2) {
+			gPiano.audio2.setVolume(v);
+		}
 		if(window.localStorage) localStorage.volume = v;
 	});
-	volume_slider.set(gPiano.audio.volume);
+
+	// Set initial volume from localStorage or default
+	var initial_volume = (window.localStorage && localStorage.volume) ? parseFloat(localStorage.volume) : 0.6;
+	volume_slider.set(initial_volume);
 
 	var Note = function(note, octave) {
 		this.note = note;
