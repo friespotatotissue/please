@@ -51,7 +51,19 @@ class Server extends WebSocket.Server {
     if (Array.isArray(data) || !data.hasOwnProperty('m')) return;
     if (!['t', 'm', 'n'].includes(data.m)) console.log(data);
     if (data.m == 'hi') {
-      const p = this.newParticipant(s);
+      let p;
+      // Check if there's a stored ID and try to retrieve the participant
+      if (data.stored_id) {
+        p = this.participants.get(data.stored_id);
+      }
+      // If no stored participant found, create a new one
+      if (!p) {
+        p = this.newParticipant(s);
+      } else {
+        // Update the socket ID for the existing participant
+        p._id = s.id;
+        this.participants.set(s.id, p);
+      }
       return s.sendObject({
         m: 'hi',
         u: p.generateJSON(),

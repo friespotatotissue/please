@@ -59,6 +59,8 @@ Client.prototype.isConnecting = function() {
 
 Client.prototype.start = function() {
 	this.canConnect = true;
+	// Try to get existing user ID from localStorage
+	this.storedUserId = localStorage.getItem('mpp_user_id');
 	this.connect();
 };
 
@@ -84,7 +86,8 @@ Client.prototype.connect = function() {
 			reconnectionDelayMax: 5000,
 			reconnectionAttempts: Infinity,
 			forceNew: true,
-			path: '/socket.io'
+			path: '/socket.io',
+			query: this.storedUserId ? { userId: this.storedUserId } : undefined
 		};
 
 		const serverUrl = 'https://please.up.railway.app';
@@ -100,7 +103,8 @@ Client.prototype.connect = function() {
 			self.connectionAttempts = 0;
 			self.connected = true;
 			
-			self.sendArray([{m: "hi"}]);
+			// Send hi message with stored user ID if available
+			self.sendArray([{m: "hi", stored_id: self.storedUserId}]);
 			
 			self.pingInterval = setInterval(function() {
 				self.sendArray([{m: "t", e: Date.now()}]);
@@ -176,9 +180,13 @@ Client.prototype.bindEventListeners = function() {
 	var self = this;
 	this.on("hi", function(msg) {
 		self.user = msg.u;
+		if (msg.u && msg.u._id) {
+			localStorage.setItem('mpp_user_id', msg.u._id);
+			self.storedUserId = msg.u._id;
+		}
 		self.receiveServerTime(msg.t, msg.e || undefined);
 		if(self.desiredChannelId) {
-			self.setChannel();
+			self.setChannel(self.desiredChannelId, self.desiredChannelSettings);
 		}
 	});
 	this.on("t", function(msg) {
