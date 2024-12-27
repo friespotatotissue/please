@@ -46,14 +46,14 @@ class Room {
     return this.ppl.find(p => p._id === _id);
   }
 
-  newParticipant(p) {
+  newParticipant(p, socket) {
     // Generate a unique ID for the participant
     const id = this.count++;
     const participant = new ParticipantRoom(
       id,
       p.name,
       p.color,
-      p._id
+      socket.id
     );
     this.ppl.push(participant);
 
@@ -64,8 +64,8 @@ class Room {
         id: participant.id,
         name: p.name,
         color: p.color,
-        _id: p._id
-      }, this.ppl.map(p => p._id), [p._id]);
+        _id: socket.id
+      }, this.ppl.map(p => p._id), [socket.id]);
     }
 
     return participant;
@@ -81,11 +81,7 @@ class Room {
       if (this.crown && this.crown.userId === _id) {
         if (this.ppl.length > 0) {
           // Find next connected participant
-          const nextParticipant = this.ppl.find(p => {
-            const participant = this.server.participants.get(p._id);
-            return participant && participant.isConnected;
-          });
-          
+          const nextParticipant = this.ppl[0];
           if (nextParticipant) {
             this.crown = {
               participantId: nextParticipant.id,

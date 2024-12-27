@@ -82,7 +82,7 @@ class Server extends WebSocket.Server {
       // Old Room
       const old = this.getRoom(p.room);
       if (old) {
-        old.removeParticipant(p._id);
+        old.removeParticipant(s.id);
         if (old.count <= 0) this.rooms.delete(p.room);
       }
       // New Room
@@ -92,9 +92,9 @@ class Server extends WebSocket.Server {
       }
       
       // Create participant first
-      let pR = r.findParticipant(p._id);
+      let pR = r.findParticipant(s.id);
       if (!pR) {
-        pR = r.newParticipant(p);
+        pR = r.newParticipant(p, s);
       }
       p.room = r._id;
 
@@ -102,7 +102,7 @@ class Server extends WebSocket.Server {
       if (!r.crown && !r.settings.lobby) {
         r.crown = {
           participantId: pR.id,
-          userId: p._id,
+          userId: s.id,
           time: Date.now()
         };
       }
@@ -233,12 +233,13 @@ class Server extends WebSocket.Server {
         if (sanitizedName.length > 250 || !sanitizedName) {
           data.set.name = 'Anonymous';
         }
+        
         // Update the participant's name
         p.updateUser(sanitizedName, data.set.color);
 
-        // Update all rooms where this participant exists
+        // Update all rooms where this participant exists, but only for this connection
         this.rooms.forEach(r => {
-          const pR = r.findParticipant(p._id);
+          const pR = r.findParticipant(s.id);  // Use socket ID instead of IP-based ID
           if (pR) {
             pR.updateUser(p.name, p.color);
             // Broadcast to everyone in the room
