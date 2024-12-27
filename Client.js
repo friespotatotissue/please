@@ -78,11 +78,12 @@ Client.prototype.connect = function() {
 	
 	try {
 		const socketOptions = {
-			transports: ['websocket'],
+			transports: ['websocket', 'polling'],
 			reconnection: true,
 			reconnectionDelay: 1000,
 			reconnectionDelayMax: 5000,
-			reconnectionAttempts: Infinity
+			reconnectionAttempts: Infinity,
+			forceNew: true
 		};
 
 		if(typeof module !== "undefined") {
@@ -153,9 +154,13 @@ Client.prototype.connect = function() {
 	});
 
 	this.socket.on("message", function(data) {
-		var transmission = JSON.parse(data);
-		for(var i = 0; i < transmission.length; i++) {
-			self.emit(transmission[i].m, transmission[i]);
+		try {
+			var transmission = JSON.parse(data);
+			for(var i = 0; i < transmission.length; i++) {
+				self.emit(transmission[i].m, transmission[i]);
+			}
+		} catch (err) {
+			console.error("Error parsing message:", err);
 		}
 	});
 };
