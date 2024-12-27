@@ -50,189 +50,217 @@ class Server extends WebSocket.Server {
   handleData(s, data) {
     if (Array.isArray(data) || !data.hasOwnProperty('m')) return;
     if (!['t', 'm', 'n'].includes(data.m)) console.log(data);
-    if (data.m == 'hi') {
-      const p = this.newParticipant(s);
-      return s.sendObject({
-        m: 'hi',
-        u: p.generateJSON(),
-        t: Date.now()
-      });
-    }
-    if (data.m == 'ch') {
-      const p = this.getParticipant(s);
-      if (!p) return;
-      // Old Room
-      const old = this.getRoom(p.room);
-      if (old) {
-        old.removeParticipant(p._id);
-        if (old.count <= 0) this.rooms.delete(p.room);
-      }
-      // New Room
-      let r = this.getRoom(data._id);
-      if (!r) r = this.newRoom(data, p);
-      let pR = r.findParticipant(p._id);
-      if (!pR) pR = r.newParticipant(p);
-      p.room = r._id;
-      
-      // Set crown for room creator
-      if (!r.settings.lobby && r.crown && r.crown.userId === p._id && !r.crown.participantId) {
-        r.crown.participantId = pR.id;
-        this.rooms.set(r._id, r);
-      }
-      
-      if (r._id.toLowerCase().includes('black')) {
-        // Send offline note quota because fuck it
-        s.sendObject({
-          m: 'nq',
-          allowance: 8000,
-          max: 24000,
-          histLen: 3
-        });
-      } else {
-        // Send lobby notequota until told otherwise
-        s.sendObject({
-          m: 'nq',
-          allowance: 200,
-          max: 600,
-          histLen: 0
+    
+    try {
+      if (data.m == 'hi') {
+        const p = this.newParticipant(s);
+        return s.sendObject({
+          m: 'hi',
+          u: p.generateJSON(),
+          t: Date.now()
         });
       }
-      // Clear Chat
-      s.sendObject({
-        m: 'c'
-      }, () => {
-        const chatobjs = [];
-        for (let i = 0; i < (r.chat.messages.length > 50 ? 50 : r.chat.messages.length); i++) {
-          chatobjs.unshift(r.chat.messages[i]);
+      
+      // Add error handling for socket operations
+      if (!s || !s.readyState === WebSocket.OPEN) {
+        console.log('Socket not ready, attempting reconnection...');
+        return;
+      }
+
+      if (data.m == 'ch') {
+        const p = this.getParticipant(s);
+        if (!p) return;
+        // Old Room
+        const old = this.getRoom(p.room);
+        if (old) {
+          old.removeParticipant(p._id);
+          if (old.count <= 0) this.rooms.delete(p.room);
         }
-        return s.sendArray(chatobjs);
-      });
-      return s.sendObject({
-        m: 'ch',
-        ch: r.generateJSON(),
-        p: r.findParticipant(p._id).id,
-        ppl: r.ppl.length > 0 ? r.ppl : null
-      });
-    }
-    if (data.m == 'chset') {
-      const p = this.getParticipant(s);
-      if (!p) return;
-      const r = this.getRoom(p.room);
-      if (!r) return;
-      if (r.crown && r.crown.userId != p._id) return;
-      r.update(data.set);
-    }
-    if (data.m == 'a') {
-      const p = this.getParticipant(s);
-      if (!p) return;
-      const r = this.getRoom(p.room);
-      if (!r) return;
-      const pR = r.findParticipant(p._id);
-      if (!data.message) return;
-      if (data.message.length > 255) {
-        data.message.length = 255;
+        // New Room
+        let r = this.getRoom(data._id);
+        if (!r) r = this.newRoom(data, p);
+        let pR = r.findParticipant(p._id);
+        if (!pR) pR = r.newParticipant(p);
+        p.room = r._id;
+        
+        // Set crown for room creator
+        if (!r.settings.lobby && r.crown && r.crown.userId === p._id && !r.crown.participantId) {
+          r.crown.participantId = pR.id;
+          this.rooms.set(r._id, r);
+        }
+        
+        if (r._id.toLowerCase().includes('black')) {
+          // Send offline note quota because fuck it
+          s.sendObject({
+            m: 'nq',
+            allowance: 8000,
+            max: 24000,
+            histLen: 3
+          });
+        } else {
+          // Send lobby notequota until told otherwise
+          s.sendObject({
+            m: 'nq',
+            allowance: 200,
+            max: 600,
+            histLen: 0
+          });
+        }
+        // Clear Chat
+        s.sendObject({
+          m: 'c'
+        }, () => {
+          const chatobjs = [];
+          for (let i = 0; i < (r.chat.messages.length > 50 ? 50 : r.chat.messages.length); i++) {
+            chatobjs.unshift(r.chat.messages[i]);
+          }
+          return s.sendArray(chatobjs);
+        });
+        return s.sendObject({
+          m: 'ch',
+          ch: r.generateJSON(),
+          p: r.findParticipant(p._id).id,
+          ppl: r.ppl.length > 0 ? r.ppl : null
+        });
       }
-      data.message = data.message.replace(/\r?\n|\r/g, '');
-      data.message = this.removeTextHell(data.message);
-      const msg = {
-        m: 'a',
-        p: pR.generateJSON(),
-        a: data.message
-      };
-      r.chat.insert(msg);
-      try {
-        // if (r.settings.visible) webhook.send(`${r._id} - \`${p._id.substring(0, 5)}\` **${p.name}:**  ${msg.a}`);
-      } catch (e) {
+      if (data.m == 'chset') {
+        const p = this.getParticipant(s);
+        if (!p) return;
+        const r = this.getRoom(p.room);
+        if (!r) return;
+        if (r.crown && r.crown.userId != p._id) return;
+        
+        // Update room settings
+        r.update(data.set);
+        
+        // Broadcast the update to all participants with error handling
+        const updateMsg = {
+          m: 'ch',
+          ch: r.generateJSON(),
+          p: r.findParticipant(p._id).id,
+          ppl: r.ppl.length > 0 ? r.ppl : null
+        };
+        
+        try {
+          this.broadcastTo(updateMsg, r.ppl.map(tpR => tpR._id));
+        } catch (err) {
+          console.error('Error broadcasting room update:', err);
+        }
+      }
+      if (data.m == 'a') {
+        const p = this.getParticipant(s);
+        if (!p) return;
+        const r = this.getRoom(p.room);
+        if (!r) return;
+        const pR = r.findParticipant(p._id);
+        if (!data.message) return;
+        if (data.message.length > 255) {
+          data.message.length = 255;
+        }
+        data.message = data.message.replace(/\r?\n|\r/g, '');
+        data.message = this.removeTextHell(data.message);
+        const msg = {
+          m: 'a',
+          p: pR.generateJSON(),
+          a: data.message
+        };
+        r.chat.insert(msg);
+        try {
+          // if (r.settings.visible) webhook.send(`${r._id} - \`${p._id.substring(0, 5)}\` **${p.name}:**  ${msg.a}`);
+        } catch (e) {
+          // ...
+        }
+        return this.broadcastTo(msg, r.ppl.map(tpR => tpR._id));
+      }
+      if (data.m == 'n') {
+        const p = this.getParticipant(s);
+        if (!p) return;
+        const r = this.getRoom(p.room);
+        if (!r) return;
+        const pR = r.findParticipant(p._id);
+        if (!pR) return;
+        return this.broadcastTo({
+          m: 'n',
+          n: data.n,
+          p: pR.id,
+          t: data.t
+        }, r.ppl.map(tpR => tpR._id), [p._id]);
+      }
+      if (data.m == 'm') {
+        const p = this.getParticipant(s);
+        if (!p) return;
+        const r = this.getRoom(p.room);
+        if (!r) return;
+        const pR = r.findParticipant(p._id);
+        if (!pR) return;
+        return this.broadcastTo({
+          m: 'm',
+          id: pR.id,
+          x: data.x,
+          y: data.y
+        }, r.ppl.map(tpR => tpR._id), [p._id]);
+      }
+      if (data.m == '+ls') {
+        const p = this.getParticipant(s);
+        if (!p) return;
+        p.updates = true;
+        const keys = [];
+        
+        // Ensure lobby exists
+        let lobby = this.getRoom('lobby');
+        if (!lobby) {
+          lobby = new Room(p, this, 'lobby', 0);
+          this.rooms.set('lobby', lobby);
+        }
+        
+        // Add lobby first
+        keys.push(lobby.generateJSON());
+        
+        // Add other visible rooms
+        this.rooms.forEach(r => {
+          if (r.settings.visible && r._id !== 'lobby') {
+            keys.push(r.generateJSON());
+          }
+        });
+        
+        return s.sendObject({
+          m: 'ls',
+          c: true,
+          u: keys
+        });
+      }
+      if (data.m == '-ls') {
         // ...
       }
-      return this.broadcastTo(msg, r.ppl.map(tpR => tpR._id));
-    }
-    if (data.m == 'n') {
-      const p = this.getParticipant(s);
-      if (!p) return;
-      const r = this.getRoom(p.room);
-      if (!r) return;
-      const pR = r.findParticipant(p._id);
-      if (!pR) return;
-      return this.broadcastTo({
-        m: 'n',
-        n: data.n,
-        p: pR.id,
-        t: data.t
-      }, r.ppl.map(tpR => tpR._id), [p._id]);
-    }
-    if (data.m == 'm') {
-      const p = this.getParticipant(s);
-      if (!p) return;
-      const r = this.getRoom(p.room);
-      if (!r) return;
-      const pR = r.findParticipant(p._id);
-      if (!pR) return;
-      return this.broadcastTo({
-        m: 'm',
-        id: pR.id,
-        x: data.x,
-        y: data.y
-      }, r.ppl.map(tpR => tpR._id), [p._id]);
-    }
-    if (data.m == '+ls') {
-      const p = this.getParticipant(s);
-      if (!p) return;
-      p.updates = true;
-      const keys = [];
-      
-      // Ensure lobby exists
-      let lobby = this.getRoom('lobby');
-      if (!lobby) {
-        lobby = new Room(p, this, 'lobby', 0);
-        this.rooms.set('lobby', lobby);
-      }
-      
-      // Add lobby first
-      keys.push(lobby.generateJSON());
-      
-      // Add other visible rooms
-      this.rooms.forEach(r => {
-        if (r.settings.visible && r._id !== 'lobby') {
-          keys.push(r.generateJSON());
+      if (data.m == 'userset') {
+        const p = this.getParticipant(s);
+        if (!p) return;
+        if (data.set.name) {
+          if (data.set.name.length > 250 || !data.set.name.replace(/\s/g, '')) data.set.name = 'Invalid';
+          p.updateUser(this.removeTextHell(data.set.name));
         }
-      });
-      
-      return s.sendObject({
-        m: 'ls',
-        c: true,
-        u: keys
-      });
-    }
-    if (data.m == '-ls') {
-      // ...
-    }
-    if (data.m == 'userset') {
-      const p = this.getParticipant(s);
-      if (!p) return;
-      if (data.set.name) {
-        if (data.set.name.length > 250 || !data.set.name.replace(/\s/g, '')) data.set.name = 'Invalid';
-        p.updateUser(this.removeTextHell(data.set.name));
+        const r = this.getRoom(p.room);
+        if (!r) return;
+        const pR = r.findParticipant(p._id);
+        if (!pR) return;
+        pR.updateUser(data.set.name || 'Anonymous');
+        return this.broadcastTo({
+          m: 'p',
+          color: p.color,
+          id: pR.id,
+          name: p.name,
+          _id: p._id
+        }, r.ppl.map(tpR => tpR._id));
       }
-      const r = this.getRoom(p.room);
-      if (!r) return;
-      const pR = r.findParticipant(p._id);
-      if (!pR) return;
-      pR.updateUser(data.set.name || 'Anonymous');
-      return this.broadcastTo({
-        m: 'p',
-        color: p.color,
-        id: pR.id,
-        name: p.name,
-        _id: p._id
-      }, r.ppl.map(tpR => tpR._id));
-    }
-    if (data.m == 't') {
-      return s.sendObject({
-        m: 't',
-        t: Date.now(),
-        echo: data.e - Date.now()
-      });
+      if (data.m == 't') {
+        return s.sendObject({
+          m: 't',
+          t: Date.now(),
+          echo: data.e - Date.now()
+        });
+      }
+    } catch (err) {
+      console.error('Error handling socket data:', err);
     }
   }
   // Participants

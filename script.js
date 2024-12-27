@@ -1142,6 +1142,36 @@ Rect.prototype.contains = function(x, y) {
 
 	var wssport = window.location.hostname == "www.multiplayerpiano.com" ? 443 : 8080;
 	var gClient = new Client("ws://" + window.location.hostname + ":" + wssport);
+	
+	// Add reconnection handling
+	var reconnectionAttempts = 0;
+	var maxReconnectionAttempts = 5;
+	var reconnectionDelay = 2000;
+
+	gClient.on("disconnect", function() {
+		console.log("Disconnected. Attempting to reconnect...");
+		if (reconnectionAttempts < maxReconnectionAttempts) {
+			setTimeout(function() {
+				reconnectionAttempts++;
+				console.log("Reconnection attempt " + reconnectionAttempts);
+				gClient.start();
+			}, reconnectionDelay);
+		} else {
+			console.log("Max reconnection attempts reached. Please refresh the page.");
+			new Notification({
+				id: "connection-error",
+				title: "Connection Error",
+				text: "Unable to reconnect to the server. Please refresh the page.",
+				duration: -1
+			});
+		}
+	});
+
+	gClient.on("connect", function() {
+		reconnectionAttempts = 0;
+		console.log("Connected successfully");
+	});
+
 	gClient.setChannel(channel_id);
 	gClient.start();
 
@@ -1164,7 +1194,8 @@ Rect.prototype.contains = function(x, y) {
 	// Handle changes to participants
 	(function() {
 		gClient.on("participant added", function(part) {
-
+			if (!part) return;
+			
 			part.displayX = 150;
 			part.displayY = 50;
 
@@ -1203,18 +1234,17 @@ Rect.prototype.contains = function(x, y) {
 
 			// add cursorDiv
 			if(gClient.participantId !== part.id || gSeeOwnCursor) {
-				var div = document.createElement("div");
-				div.className = "cursor";
-				div.style.display = "none";
-				part.cursorDiv = $("#cursors")[0].appendChild(div);
+				var cursorDiv = document.createElement("div");
+				cursorDiv.className = "cursor";
+				cursorDiv.style.display = "none";
+				part.cursorDiv = $("#cursors")[0].appendChild(cursorDiv);
 				$(part.cursorDiv).fadeIn(2000);
 
-				var div = document.createElement("div");
-				div.className = "name";
-				div.style.backgroundColor = part.color || "#777"
-				div.textContent = part.name || "";
-				part.cursorDiv.appendChild(div);
-
+				var nameDiv = document.createElement("div");
+				nameDiv.className = "name";
+				nameDiv.style.backgroundColor = part.color || "#777"
+				nameDiv.textContent = part.name || "";
+				part.cursorDiv.appendChild(nameDiv);
 			} else {
 				part.cursorDiv = undefined;
 			}
@@ -1271,6 +1301,10 @@ Rect.prototype.contains = function(x, y) {
 			}
 		});
 		function updateCursor(msg) {
+			if (!msg || !msg.id || typeof msg.x === 'undefined' || typeof msg.y === 'undefined') {
+				console.log("Received invalid cursor update:", msg);
+				return;
+			}
 			const part = gClient.ppl[msg.id];
 			if (part && part.cursorDiv) {
 				part.cursorDiv.style.left = msg.x + "%";
@@ -2037,7 +2071,13 @@ Rect.prototype.contains = function(x, y) {
     var channel = msg.ch;
 		var info = $("#room > .info");
 		info.text(channel._id);
-		if(channel.settings.lobby) info.addClass("lobby");
+		if(channel.settings.lobby) {
+      info.addClass("lobby");
+      info.css({
+        '--color': channel.settings.color,
+        '--color2': channel.settings.color2
+      });
+    }
 		else info.removeClass("lobby");
 		if(!channel.settings.chat) info.addClass("no-chat");
 		else info.removeClass("no-chat");
