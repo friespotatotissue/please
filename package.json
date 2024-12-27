@@ -4,16 +4,19 @@
   "description": "Multiplayer Piano Server",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "npm install",
+    "postinstall": "npm run build"
   },
   "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.18.2",
-    "sha1": "^1.1.1",
-    "socket.io": "^4.7.2",
-    "ws": "^8.14.2"
+    "cors": "2.8.5",
+    "express": "4.18.2",
+    "sha1": "1.1.1",
+    "socket.io": "4.7.2",
+    "ws": "8.14.2"
   },
   "engines": {
-    "node": ">=14.0.0"
+    "node": "18.x",
+    "npm": "9.x"
   }
 } 
