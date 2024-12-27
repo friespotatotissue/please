@@ -8,7 +8,7 @@ const WebSocket = require('ws');
 
 class Server extends WebSocket.Server {
   constructor() {
-    super({ port: 8080 });
+    super({ noServer: true });
     this.cli = new CLI(this);
     console.log('Server Launched');
     this.sockets = new Set();

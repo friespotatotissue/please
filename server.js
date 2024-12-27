@@ -25,21 +25,19 @@ app.use(cors());
 // Serve static files
 app.use(express.static(__dirname));
 
-// Create WebSocket server instance with the HTTP server
-class CustomServer extends Server {
-    constructor(httpServer) {
-        super({ server: httpServer }); // Pass the HTTP server to WebSocket.Server
-    }
-}
-
-const wsServer = new CustomServer(http);
+// Create WebSocket server instance
+const wsServer = new Server();
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
     
     // Create a Socket wrapper instance
-    const socketWrapper = new Socket(wsServer, socket, socket.request);
+    const socketWrapper = new Socket(wsServer, {
+        send: (data) => socket.send(data),
+        close: () => socket.disconnect(),
+        terminate: () => socket.disconnect(true)
+    }, socket.request);
     wsServer.sockets.add(socketWrapper);
 
     socket.on('message', (data) => {
