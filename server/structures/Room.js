@@ -1,6 +1,4 @@
-const bgColor = "#3b5054";
-const lobbyColor = "#73b3cc";
-const lobbyColor2 = "#273546";
+const bgColor = '#206694';
 const Chat = require('./Chat.js');
 const ParticipantRoom = require('./ParticipantRoom.js');
 const sha1 = require('sha1');
@@ -18,8 +16,7 @@ class Room {
     if (isLobby) {
       this.settings = {
         chat: true,
-        color: lobbyColor,
-        color2: lobbyColor2,
+        color: bgColor,
         crownsolo: false,
         lobby: true,
         visible: true
@@ -28,7 +25,6 @@ class Room {
       this.settings = {
         chat: settings.chat != null ? settings.chat : true,
         color: settings.color || bgColor,
-        color2: settings.color2,
         crownsolo: settings.crownsolo != null ? settings.crownsolo : false,
         lobby: false,
         visible: settings.visible != null ? settings.visible : true
@@ -76,7 +72,6 @@ class Room {
     this.settings = Object.assign(this.settings, {
       chat: settings.chat != null ? settings.chat : this.settings.chat,
       color: settings.color || this.settings.color,
-      color2: settings.color2,
       crownsolo: settings.crownsolo != null ? settings.crownsolo : this.settings.crownsolo,
       visible: settings.visible != null ? settings.visible : this.settings.visible
     });

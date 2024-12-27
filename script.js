@@ -433,52 +433,20 @@ Rect.prototype.contains = function(x, y) {
 		req.addEventListener("readystatechange", function(evt) {
 			if(req.readyState !== 4) return;
 			try {
-				if (req.status !== 200) {
-					throw new Error("HTTP Status " + req.status + " for " + url);
-				}
-				
-				audio.context.decodeAudioData(req.response, 
-					function(buffer) {
-						audio.sounds[id] = buffer;
-						if(cb) cb();
-					},
-					function(error) {
-						console.error("Error decoding audio data for", id, ":", error);
-						// Try to load a fallback format if available
-						if (url.endsWith('.mp3') && !url.includes('fallback')) {
-							var fallbackUrl = url.replace('.mp3', '.wav');
-							audio.load(id, fallbackUrl, cb);
-						} else {
-							new Notification({
-								id: "audio-decode-error", 
-								title: "Audio Error", 
-								text: "Failed to decode audio for " + id + ". Some sounds may not play.",
-								target: "#piano", 
-								duration: 5000
-							});
-						}
-					}
-				);
-			} catch(e) {
-				console.error("Error loading audio:", e);
-				new Notification({
-					id: "audio-download-error", 
-					title: "Audio Error", 
-					text: "Failed to load audio file " + id + ": " + e.message,
-					target: "#piano", 
-					duration: 5000
+				audio.context.decodeAudioData(req.response, function(buffer) {
+					audio.sounds[id] = buffer;
+					if(cb) cb();
 				});
+			} catch(e) {
+				/*throw new Error(e.message
+					+ " / id: " + id
+					+ " / url: " + url
+					+ " / status: " + req.status
+					+ " / ArrayBuffer: " + (req.response instanceof ArrayBuffer)
+					+ " / byteLength: " + (req.response && req.response.byteLength ? req.response.byteLength : "undefined"));*/
+				new Notification({id: "audio-download-error", title: "Problem", text: "For some reason, an audio download failed with a status of " + req.status + ". ",
+					target: "#piano", duration: 10000});
 			}
-		});
-		req.addEventListener("error", function(err) {
-			console.error("Error loading audio file:", err);
-			new Notification({
-				id: "audio-network-error", 
-				title: "Audio Error", 
-				text: "Network error while loading audio file " + id,
-				target: "#piano", 
-				duration: 5000
-			});
 		});
 		req.send();
 	};
@@ -527,7 +495,8 @@ Rect.prototype.contains = function(x, y) {
 			gain.linearRampToValueAtTime(gain.value * 0.1, time + 0.16);
 			gain.linearRampToValueAtTime(0.0, time + 0.4);
 			this.playings[id].source.stop(time + 0.41);
-		
+			
+
 			if(this.playings[id].voice) {
 				this.playings[id].voice.stop(time);
 			}
@@ -1173,139 +1142,6 @@ Rect.prototype.contains = function(x, y) {
 
 	var wssport = window.location.hostname == "www.multiplayerpiano.com" ? 443 : 8080;
 	var gClient = new Client("ws://" + window.location.hostname + ":" + wssport);
-	
-	// Add robust connection handling
-	var reconnectionAttempts = 0;
-	var maxReconnectionAttempts = 10;
-	var reconnectionDelay = 2000;
-	var reconnectionBackoff = 1.5;
-	var isReconnecting = false;
-	var joinTimeout = null;
-
-	function generateUniqueClientId() {
-		return Date.now().toString(36) + Math.random().toString(36).substr(2);
-	}
-
-	// Store client ID in localStorage to maintain consistency across tabs
-	if (!localStorage.getItem('clientId')) {
-		localStorage.setItem('clientId', generateUniqueClientId());
-	}
-
-	gClient.clientId = localStorage.getItem('clientId');
-
-	gClient.on("disconnect", function() {
-		console.log("Disconnected. Attempting to reconnect...");
-		if (joinTimeout) clearTimeout(joinTimeout);
-		if (!isReconnecting) {
-			isReconnecting = true;
-			attemptReconnect();
-		}
-	});
-
-	function attemptReconnect() {
-		if (reconnectionAttempts < maxReconnectionAttempts) {
-			setTimeout(function() {
-				reconnectionAttempts++;
-				console.log("Reconnection attempt " + reconnectionAttempts);
-				gClient.start();
-				// Increase delay exponentially for next attempt
-				reconnectionDelay *= reconnectionBackoff;
-			}, reconnectionDelay);
-		} else {
-			console.log("Max reconnection attempts reached. Please refresh the page.");
-			new Notification({
-				id: "connection-error",
-				title: "Connection Error",
-				text: "Unable to reconnect to the server. Please refresh the page.",
-				duration: -1
-			});
-		}
-	}
-
-	gClient.on("connect", function() {
-		reconnectionAttempts = 0;
-		reconnectionDelay = 2000;
-		isReconnecting = false;
-		console.log("Connected successfully");
-		
-		// Send client ID and desired channel in hi message
-		gClient.sendArray([{
-			m: "hi",
-			clientId: gClient.clientId,
-			_id: gClient.desiredChannelId || channel_id
-		}]);
-		
-		// Set a timeout for joining channel
-		if (joinTimeout) clearTimeout(joinTimeout);
-		joinTimeout = setTimeout(function() {
-			console.log("Channel join timeout - attempting to rejoin");
-			if (gClient.desiredChannelId) {
-				gClient.setChannel(gClient.desiredChannelId);
-			} else {
-				gClient.setChannel(channel_id);
-			}
-		}, 5000);
-	});
-
-	// Handle successful channel join
-	gClient.on("ch", function(msg) {
-		if (!msg.ch) {
-			console.error("Received invalid channel message:", msg);
-			return;
-		}
-
-		if (joinTimeout) {
-			clearTimeout(joinTimeout);
-			joinTimeout = null;
-		}
-		
-		// Update channel state
-		gClient.channel = msg.ch;
-		gClient.participantId = msg.p || null;
-		
-		// Handle crown ownership
-		if (msg.ch.crown && msg.ch.crown.clientId === gClient.clientId && msg.ch.crown.userId === gClient.user._id) {
-				msg.ch.crown.participantId = gClient.participantId;
-				document.getElementById("room-settings-btn").style.display = "block";
-		} else {
-			document.getElementById("room-settings-btn").style.display = "none";
-		}
-		
-		// Update participants
-		if (msg.ppl) {
-			gClient.setParticipants(msg.ppl);
-		}
-		
-		// Update room info display
-		var info = $("#room > .info");
-		info.text(msg.ch._id);
-		if (msg.ch.settings.lobby) {
-			info.addClass("lobby");
-		} else {
-			info.removeClass("lobby");
-		}
-		
-		// Update status
-		gClient.emit("status", "Connected!");
-		console.log("Successfully joined channel:", msg.ch._id);
-	});
-
-	// Handle errors
-	gClient.on("error", function(err) {
-		console.error("Client error:", err);
-		new Notification({
-			id: "client-error",
-			title: "Connection Error",
-			text: "An error occurred. Please try refreshing the page.",
-			duration: 7000
-		});
-	});
-
-	// Handle notifications
-	gClient.on("notification", function(msg) {
-		new Notification(msg);
-	});
-
 	gClient.setChannel(channel_id);
 	gClient.start();
 
@@ -1328,8 +1164,7 @@ Rect.prototype.contains = function(x, y) {
 	// Handle changes to participants
 	(function() {
 		gClient.on("participant added", function(part) {
-			if (!part) return;
-			
+
 			part.displayX = 150;
 			part.displayY = 50;
 
@@ -1346,10 +1181,10 @@ Rect.prototype.contains = function(x, y) {
 				$(div).addClass("owner");
 			}
 			if(gPianoMutes.indexOf(part._id) !== -1) {
-				$(div).addClass("muted-notes");
+				$(part.nameDiv).addClass("muted-notes");
 			}
 			if(gChatMutes.indexOf(part._id) !== -1) {
-				$(div).addClass("muted-chat");
+				$(part.nameDiv).addClass("muted-chat");
 			}
 			div.style.display = "none";
 			part.nameDiv = $("#names")[0].appendChild(div);
@@ -1368,17 +1203,18 @@ Rect.prototype.contains = function(x, y) {
 
 			// add cursorDiv
 			if(gClient.participantId !== part.id || gSeeOwnCursor) {
-				var cursorDiv = document.createElement("div");
-				cursorDiv.className = "cursor";
-				cursorDiv.style.display = "none";
-				part.cursorDiv = $("#cursors")[0].appendChild(cursorDiv);
+				var div = document.createElement("div");
+				div.className = "cursor";
+				div.style.display = "none";
+				part.cursorDiv = $("#cursors")[0].appendChild(div);
 				$(part.cursorDiv).fadeIn(2000);
 
-				var nameDiv = document.createElement("div");
-				nameDiv.className = "name";
-				nameDiv.style.backgroundColor = part.color || "#777"
-				nameDiv.textContent = part.name || "";
-				part.cursorDiv.appendChild(nameDiv);
+				var div = document.createElement("div");
+				div.className = "name";
+				div.style.backgroundColor = part.color || "#777"
+				div.textContent = part.name || "";
+				part.cursorDiv.appendChild(div);
+
 			} else {
 				part.cursorDiv = undefined;
 			}
@@ -1406,93 +1242,43 @@ Rect.prototype.contains = function(x, y) {
 			.css("background-color", color);
 		});
 		gClient.on("ch", function(msg) {
-			if(msg.p) gClient.participantId = msg.p;
-			
-			if(msg.ppl) {
-				// Reset all participants first
-				for(var id in gClient.ppl) {
-					if(!gClient.ppl.hasOwnProperty(id)) continue;
+			for(var id in gClient.ppl) {
+				if(gClient.ppl.hasOwnProperty(id)) {
 					var part = gClient.ppl[id];
-					$(part.nameDiv).removeClass("owner");
-					$(part.cursorDiv).removeClass("owner");
-				}
-				
-				// Update participants with new state
-				gClient.setParticipants(msg.ppl);
-			}
-			
-			// Update crown and settings
-			gClient.channel = msg.ch;
-			if(gClient.channel.crown) {
-				for(var id in gClient.ppl) {
-					if(!gClient.ppl.hasOwnProperty(id)) continue;
-					var part = gClient.ppl[id];
-					if(gClient.channel.crown.participantId === part.id) {
+					if(part.id === gClient.participantId) {
+						$(part.nameDiv).addClass("me");
+					} else {
+						$(part.nameDiv).removeClass("me");
+					}
+					if(msg.ch.crown && msg.ch.crown.participantId === part.id) {
 						$(part.nameDiv).addClass("owner");
 						$(part.cursorDiv).addClass("owner");
+					} else {
+						$(part.nameDiv).removeClass("owner");
+						$(part.cursorDiv).removeClass("owner");
+					}
+					if(gPianoMutes.indexOf(part._id) !== -1) {
+						$(part.nameDiv).addClass("muted-notes");
+					} else {
+						$(part.nameDiv).removeClass("muted-notes");
+					}
+					if(gChatMutes.indexOf(part._id) !== -1) {
+						$(part.nameDiv).addClass("muted-chat");
+					} else {
+						$(part.nameDiv).removeClass("muted-chat");
 					}
 				}
 			}
-			
-			// Update room settings button visibility
-			if(gClient.isOwner()) {
-				$("#room-settings-btn").show();
-			} else {
-				$("#room-settings-btn").hide();
-			}
-
-			// Update room info display
-			var info = $("#room > .info");
-			info.text(msg.ch._id);
-			if(msg.ch.settings.lobby) {
-				info.addClass("lobby");
-				info.css({
-					'color': '#ffb726', // Golden color for lobby
-					'text-shadow': '0px 0px 3px rgba(255, 183, 38, 0.5)'
-				});
-			} else {
-				info.removeClass("lobby");
-				info.css({
-					'color': '',
-					'text-shadow': ''
-				});
-			}
 		});
 		function updateCursor(msg) {
-			if (!msg || typeof msg.x === 'undefined' || typeof msg.y === 'undefined') {
-				return;
-			}
-			
-			// Handle both participant objects and cursor update messages
-			const id = msg.id || msg.participantId;
-			if (!id) return;
-			
-			const part = gClient.ppl[id];
+			const part = gClient.ppl[msg.id];
 			if (part && part.cursorDiv) {
 				part.cursorDiv.style.left = msg.x + "%";
 				part.cursorDiv.style.top = msg.y + "%";
 			}
 		}
 		gClient.on("m", updateCursor);
-		// Remove this line as it was causing duplicate cursor updates
-		// gClient.on("participant added", updateCursor);
-
-		gClient.on("participant update", function(part) {
-			if (!part || !part.id) return;
-			
-			var name = part.name || "";
-			var color = part.color || "#777";
-			if (part.nameDiv) {
-				part.nameDiv.style.backgroundColor = color;
-				part.nameDiv.textContent = name;
-			}
-			if (part.cursorDiv) {
-				$(part.cursorDiv)
-					.find(".name")
-					.text(name)
-					.css("background-color", color);
-			}
-		});
+		gClient.on("participant added", updateCursor);
 	})();
 
 
@@ -1618,8 +1404,6 @@ Rect.prototype.contains = function(x, y) {
 			}
 		});
 		$("#room-settings .submit").click(function() {
-			if(!gClient.channel || !gClient.isOwner()) return;
-			
 			var settings = {
 				visible: $("#room-settings .checkbox[name=visible]").is(":checked"),
 				chat: $("#room-settings .checkbox[name=chat]").is(":checked"),
@@ -2253,13 +2037,7 @@ Rect.prototype.contains = function(x, y) {
     var channel = msg.ch;
 		var info = $("#room > .info");
 		info.text(channel._id);
-		if(channel.settings.lobby) {
-      info.addClass("lobby");
-      info.css({
-        '--color': channel.settings.color || '#73b3cc',
-        '--color2': channel.settings.color2 || '#273546'
-      });
-    }
+		if(channel.settings.lobby) info.addClass("lobby");
 		else info.removeClass("lobby");
 		if(!channel.settings.chat) info.addClass("no-chat");
 		else info.removeClass("no-chat");

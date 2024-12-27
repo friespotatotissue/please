@@ -7,14 +7,13 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "cors": "2.8.5",
-    "express": "4.18.2",
-    "sha1": "1.1.1",
-    "socket.io": "4.7.2",
-    "ws": "8.14.2"
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "sha1": "^1.1.1",
+    "socket.io": "^4.7.2",
+    "ws": "^8.14.2"
   },
   "engines": {
-    "node": "18.x",
-    "npm": "9.x"
+    "node": ">=14.0.0"
   }
 } 

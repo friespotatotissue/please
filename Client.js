@@ -71,6 +71,10 @@ Client.prototype.connect = function() {
 	if(!this.canConnect || !this.isSupported() || this.isConnected() || this.isConnecting())
 		return;
 	this.emit("status", "Connecting...");
+	console.log("Attempting Socket.IO connection with canConnect:", this.canConnect, 
+		"isSupported:", this.isSupported(), 
+		"isConnected:", this.isConnected(), 
+		"isConnecting:", this.isConnecting());
 	
 	try {
 		const socketOptions = {
@@ -81,22 +85,15 @@ Client.prototype.connect = function() {
 			reconnectionAttempts: Infinity,
 			forceNew: true,
 			path: '/socket.io',
-			timeout: 20000,
-			query: {
-				clientId: this.clientId
-			},
-			extraHeaders: {
-				"User-Agent": navigator.userAgent
-			}
+			timeout: 60000,
+			pingTimeout: 60000,
+			pingInterval: 25000,
+			autoConnect: true,
+			rejectUnauthorized: false
 		};
 
 		const serverUrl = 'https://please.up.railway.app';
 		console.log('Connecting to server:', serverUrl);
-
-		if (this.socket) {
-			this.socket.disconnect();
-			this.socket.removeAllListeners();
-		}
 
 		this.socket = io(serverUrl, socketOptions);
 		
@@ -108,15 +105,12 @@ Client.prototype.connect = function() {
 			self.connectionAttempts = 0;
 			self.connected = true;
 			
-			// Clear any existing intervals
-			if (self.pingInterval) clearInterval(self.pingInterval);
-			if (self.noteFlushInterval) clearInterval(self.noteFlushInterval);
+			self.sendArray([{m: "hi"}]);
 			
-			// Send initial hi message with client ID
-			self.sendArray([{m: "hi", clientId: self.clientId}]);
+			if (self.pingInterval) clearInterval(self.pingInterval);
 			
 			self.pingInterval = setInterval(function() {
-				if (self.socket && self.socket.connected) {
+				if (self.isConnected()) {
 					self.sendArray([{m: "t", e: Date.now()}]);
 				}
 			}, 20000);
@@ -141,47 +135,40 @@ Client.prototype.connect = function() {
 
 		this.socket.on("disconnect", function(reason) {
 			console.log("Socket.IO Connection Closed. Reason:", reason);
-			
-			// Don't clear user state immediately on disconnect
-			if (reason === 'io server disconnect' || reason === 'transport close') {
-				// Server initiated disconnect - attempt immediate reconnection
-				setTimeout(() => {
-					if (!self.isConnected()) {
-						self.socket.connect();
-					}
-				}, 1000);
-			} else {
-				// Clear intervals but maintain state for potential reconnection
-				clearInterval(self.pingInterval);
-				clearInterval(self.noteFlushInterval);
-				self.connected = false;
-				
-				self.emit("disconnect");
-				self.emit("status", "Reconnecting...");
-			}
-		});
+			self.user = undefined;
+			self.participantId = undefined;
+			self.channel = undefined;
+			self.setParticipants([]);
+			clearInterval(self.pingInterval);
+			clearInterval(self.noteFlushInterval);
+			self.connected = false;
 
-		this.socket.on("connect_error", function(error) {
-			console.error("Connection error:", error);
-			self.emit("status", "Connection Error: " + error.message);
-			
-			if (self.connectionAttempts > 2) {
-				// Force a new connection after multiple failures
-				self.socket.disconnect();
+			self.emit("disconnect");
+			self.emit("status", "Reconnecting...");
+
+			if (reason === "io server disconnect" || reason === "transport close") {
+				++self.connectionAttempts;
+			} else {
+				self.connectionAttempts = 0;
+			}
+
+			if (reason === "transport close" || reason === "transport error") {
 				setTimeout(() => {
-					if (!self.isConnected()) {
+					if (self.canConnect && !self.isConnected()) {
 						self.connect();
 					}
 				}, 1000);
 			}
 		});
 
-		this.socket.on("error", function(error) {
-			console.error("Socket error:", error);
-			if (!self.isConnected()) {
-				self.emit("status", "Connection Error: " + error.message);
-				self.connect();
-			}
+		this.socket.on("error", function(err) {
+			console.error("Socket.IO Error:", err);
+			self.emit("status", "Socket.IO Error");
+		});
+
+		this.socket.on("connect_error", function(error) {
+			console.error("Connection error:", error);
+			self.emit("status", "Connection Error: " + error.message);
 		});
 
 		this.socket.on("message", function(data) {
