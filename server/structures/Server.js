@@ -61,18 +61,23 @@ class Server extends WebSocket.Server {
       }
       // New Room
       let r = this.getRoom(data._id);
-      if (!r) r = this.newRoom(data, p);
-      let pR = r.findParticipant(p._id);
-      if (!pR) pR = r.newParticipant(p);
-      p.room = r._id;
-      if (!r.settings.lobby && pR) {
-        r.crown = {
-          participantId: pR.id,
-          userId: p.id,
-          time: new Date()
-        };
-        this.rooms.set(r._id, r);
+      if (!r) {
+        r = this.newRoom(data, p);
+        // Only set crown for new room creator
+        if (!r.settings.lobby && !r.crown) {
+          r.crown = {
+            participantId: r.findParticipant(p._id).id,
+            userId: p._id,
+            time: new Date()
+          };
+        }
+      } else {
+        // Joining existing room - don't modify crown
+        let pR = r.findParticipant(p._id);
+        if (!pR) pR = r.newParticipant(p);
       }
+      p.room = r._id;
+      this.rooms.set(r._id, r);
       if (r._id.toLowerCase().includes('black')) {
         // Send offline note quota because fuck it
         s.sendObject({
@@ -104,7 +109,7 @@ class Server extends WebSocket.Server {
         m: 'ch',
         ch: r.generateJSON(),
         p: r.findParticipant(p._id).id,
-        ppl: r.ppl.length > 0 ? r.ppl : null
+        ppl: r.ppl.length > 0 ? r.ppl.map(p => p.generateJSON()) : null
       });
     }
     if (data.m == 'chset') {

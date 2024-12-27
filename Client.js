@@ -315,7 +315,10 @@ Client.prototype.findParticipantById = function(id) {
 };
 
 Client.prototype.isOwner = function() {
-	return this.channel && this.channel.crown && this.channel.crown.participantId === this.participantId;
+	return this.channel && 
+		   this.channel.crown && 
+		   (this.channel.crown.participantId === this.participantId || 
+		    this.channel.crown.userId === this.user._id);
 };
 
 Client.prototype.preventsPlaying = function() {
