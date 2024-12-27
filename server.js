@@ -63,15 +63,37 @@ io.on('connection', (socket) => {
                         case "ch":
                             // Handle channel join request
                             const channelId = msg._id || "lobby";
-                            currentChannel = channels[channelId] || channels.lobby;
+                            
+                            // Leave current channel if any
+                            if (currentChannel) {
+                                currentChannel.participants.delete(socket.id);
+                                socket.leave(currentChannel._id);
+                            }
+                            
+                            // Get or create channel
+                            currentChannel = channels[channelId];
+                            if (!currentChannel) {
+                                currentChannel = channels[channelId] = {
+                                    _id: channelId,
+                                    settings: {
+                                        visible: true,
+                                        chat: true,
+                                        crownsolo: false,
+                                        color: "#ecfaed"
+                                    },
+                                    participants: new Map()
+                                };
+                            }
                             
                             // Add participant to channel
-                            currentChannel.participants.set(socket.id, {
+                            const participant = {
                                 id: socket.id,
                                 name: "Anonymous",
                                 x: 0,
-                                y: 0
-                            });
+                                y: 0,
+                                color: "#" + Math.floor(Math.random()*16777215).toString(16)
+                            };
+                            currentChannel.participants.set(socket.id, participant);
 
                             // Join socket.io room
                             socket.join(channelId);
@@ -86,6 +108,16 @@ io.on('connection', (socket) => {
                                 p: socket.id,
                                 ppl: Array.from(currentChannel.participants.values())
                             }]));
+
+                            // Broadcast new participant to others in channel
+                            socket.to(channelId).emit('message', JSON.stringify([{
+                                m: "p",
+                                id: socket.id,
+                                name: participant.name,
+                                color: participant.color,
+                                x: participant.x,
+                                y: participant.y
+                            }]));
                             break;
 
                         case "t":
@@ -95,6 +127,30 @@ io.on('connection', (socket) => {
                                 t: Date.now(),
                                 e: msg.e
                             }]));
+                            break;
+
+                        case "n":
+                            // Handle note
+                            if (currentChannel) {
+                                socket.to(currentChannel._id).emit('message', JSON.stringify([{
+                                    m: "n",
+                                    n: msg.n,
+                                    p: socket.id,
+                                    t: msg.t
+                                }]));
+                            }
+                            break;
+
+                        case "m":
+                            // Handle cursor movement
+                            if (currentChannel) {
+                                socket.to(currentChannel._id).emit('message', JSON.stringify([{
+                                    m: "m",
+                                    id: socket.id,
+                                    x: msg.x,
+                                    y: msg.y
+                                }]));
+                            }
                             break;
 
                         default:
@@ -121,6 +177,10 @@ io.on('connection', (socket) => {
                 m: "bye",
                 p: socket.id
             }]));
+            // Clean up empty channels except lobby
+            if (currentChannel._id !== "lobby" && currentChannel.participants.size === 0) {
+                delete channels[currentChannel._id];
+            }
         }
     });
 

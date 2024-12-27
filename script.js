@@ -1035,8 +1035,12 @@ Rect.prototype.contains = function(x, y) {
 		if(!this.keys.hasOwnProperty(note)) return;
 		var key = this.keys[note];
 		if(key.loaded) {
-			if (this.section1.includes(key.note)) this.audio2.play(key.note, vol, delay_ms, participant.id);
-			else this.audio.play(key.note, vol, delay_ms, participant.id);
+			// Only use audio2 for higher notes
+			if (parseInt(key.note.match(/\d+/)[0]) >= 4) {
+				this.audio2.play(key.note, vol, delay_ms, participant.id);
+			} else {
+				this.audio.play(key.note, vol, delay_ms, participant.id);
+			}
 		}
 		if(typeof gMidiOutTest === "function") gMidiOutTest(key.note, vol * 100, delay_ms);
 		var self = this;
