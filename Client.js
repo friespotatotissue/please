@@ -111,9 +111,10 @@ Client.prototype.connect = function() {
 			
 			self.pingInterval = setInterval(function() {
 				if (self.isConnected()) {
+					self.socket.emit('ping');
 					self.sendArray([{m: "t", e: Date.now()}]);
 				}
-			}, 20000);
+			}, 10000);
 			
 			self.noteBuffer = [];
 			self.noteBufferTime = 0;
@@ -144,20 +145,15 @@ Client.prototype.connect = function() {
 			self.connected = false;
 
 			self.emit("disconnect");
-			self.emit("status", "Reconnecting...");
+			self.emit("status", "Disconnected");
 
-			if (reason === "io server disconnect" || reason === "transport close") {
-				++self.connectionAttempts;
-			} else {
-				self.connectionAttempts = 0;
-			}
-
-			if (reason === "transport close" || reason === "transport error") {
+			if (self.canConnect) {
 				setTimeout(() => {
-					if (self.canConnect && !self.isConnected()) {
+					if (!self.isConnected() && self.canConnect) {
+						console.log("Attempting to reconnect...");
 						self.connect();
 					}
-				}, 1000);
+				}, 2000);
 			}
 		});
 

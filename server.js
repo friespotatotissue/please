@@ -10,10 +10,15 @@ const io = require('socket.io')(http, {
     },
     transports: ['websocket', 'polling'],
     allowEIO3: true,
-    pingTimeout: 60000,
-    pingInterval: 25000,
-    connectTimeout: 45000,
-    maxHttpBufferSize: 1e8
+    pingTimeout: 120000,
+    pingInterval: 10000,
+    connectTimeout: 60000,
+    maxHttpBufferSize: 1e8,
+    allowUpgrades: true,
+    perMessageDeflate: true,
+    httpCompression: true,
+    upgradeTimeout: 30000,
+    destroyUpgrade: false
 });
 
 // Import original server structures
@@ -37,16 +42,27 @@ const wsServer = new Server();
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
     
+    // Keep alive mechanism
+    let keepAliveInterval = setInterval(() => {
+        if (socket.connected) {
+            socket.emit('ping');
+        }
+    }, 10000);
+    
     // Create a WebSocket-like wrapper for Socket.IO
     const wsWrapper = {
         readyState: WebSocket.OPEN,
         send: (data, cb) => {
-            socket.send(data);
-            if (cb) cb();
+            if (socket.connected) {
+                socket.send(data);
+                if (cb) cb();
+            }
         },
         ping: (noop) => {
-            socket.emit('ping');
-            if (noop) noop();
+            if (socket.connected) {
+                socket.emit('ping');
+                if (noop) noop();
+            }
         },
         emit: socket.emit.bind(socket),
         on: socket.on.bind(socket)
@@ -68,18 +84,30 @@ io.on('connection', (socket) => {
         socketWrapper.emit('message', data);
     });
 
-    socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
+    socket.on('disconnect', (reason) => {
+        console.log('Client disconnected:', socket.id, 'Reason:', reason);
+        clearInterval(keepAliveInterval);
         socketWrapper.emit('close');
         wsServer.sockets.delete(socketWrapper);
     });
 
     socket.on('error', (error) => {
+        console.error('Socket error:', error);
         socketWrapper.emit('error', error);
     });
 
     socket.on('pong', () => {
         socketWrapper.emit('pong');
+        socket.emit('pong_response');
+    });
+
+    // Handle reconnection attempts
+    socket.on('reconnect_attempt', () => {
+        console.log('Client attempting to reconnect:', socket.id);
+    });
+
+    socket.on('reconnect', () => {
+        console.log('Client reconnected:', socket.id);
     });
 });
 
