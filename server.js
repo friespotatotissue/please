@@ -18,6 +18,7 @@ const Socket = require('./server/structures/Socket');
 const Participant = require('./server/structures/Participant');
 const Room = require('./server/structures/Room');
 const ParticipantRoom = require('./server/structures/ParticipantRoom');
+const WebSocket = require('ws');
 
 // Enable CORS for all routes
 app.use(cors());
@@ -32,34 +33,49 @@ const wsServer = new Server();
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
     
+    // Create a WebSocket-like wrapper for Socket.IO
+    const wsWrapper = {
+        readyState: WebSocket.OPEN,
+        send: (data, cb) => {
+            socket.send(data);
+            if (cb) cb();
+        },
+        ping: (noop) => {
+            socket.emit('ping');
+            if (noop) noop();
+        },
+        emit: socket.emit.bind(socket),
+        on: socket.on.bind(socket)
+    };
+
     // Create a Socket wrapper instance
-    const socketWrapper = new Socket(wsServer, {
-        send: (data) => socket.send(data),
-        close: () => socket.disconnect(),
-        terminate: () => socket.disconnect(true)
-    }, socket.request);
+    const socketWrapper = new Socket(wsServer, wsWrapper, {
+        headers: {
+            'x-forwarded-for': socket.handshake.address
+        },
+        connection: {
+            remoteAddress: socket.handshake.address
+        }
+    });
+
     wsServer.sockets.add(socketWrapper);
 
     socket.on('message', (data) => {
-        try {
-            const messages = typeof data === 'string' ? JSON.parse(data) : data;
-            if (Array.isArray(messages)) {
-                messages.forEach(msg => wsServer.handleData(socketWrapper, msg));
-            }
-        } catch (err) {
-            console.error('Error handling message:', err);
-            socket.emit('error', 'Invalid message format');
-        }
+        socketWrapper.emit('message', data);
     });
 
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
-        socketWrapper.close();
+        socketWrapper.emit('close');
         wsServer.sockets.delete(socketWrapper);
     });
 
     socket.on('error', (error) => {
-        console.error('Socket error:', error);
+        socketWrapper.emit('error', error);
+    });
+
+    socket.on('pong', () => {
+        socketWrapper.emit('pong');
     });
 });
 
