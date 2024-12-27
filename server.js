@@ -99,6 +99,18 @@ io.on('connection', (socket) => {
     });
 
     // Handle errors
+    socket.on('disconnect', () => {
+        console.log('Client disconnected:', socket.id);
+        if (currentChannel) {
+            // Remove participant from channel
+            currentChannel.participants.delete(socket.id);
+            // Notify others in the channel
+            io.to(currentChannel._id).emit('message', JSON.stringify([{
+                m: "bye",
+                p: socket.id
+            }]));
+        }
+    });
     socket.on('error', (error) => {
         console.error('Socket error:', error);
     });

@@ -68,8 +68,17 @@ Client.prototype.stop = function() {
 };
 
 Client.prototype.connect = function() {
+	// Prevent excessive reconnection attempts
+	if (this.connectionAttempts >= 3) {
+		console.error('Max reconnection attempts reached. Stopping reconnection.');
+		this.canConnect = false;
+		this.emit("status", "Connection Failed: Too many attempts");
+		return;
+	}
+
 	if(!this.canConnect || !this.isSupported() || this.isConnected() || this.isConnecting())
 		return;
+
 	this.emit("status", "Connecting...");
 	console.log("Attempting Socket.IO connection with canConnect:", this.canConnect, 
 		"isSupported:", this.isSupported(), 
@@ -80,9 +89,9 @@ Client.prototype.connect = function() {
 		const socketOptions = {
 			transports: ['websocket'],
 			reconnection: true,
-			reconnectionDelay: 3000,
-			reconnectionDelayMax: 10000,
-			reconnectionAttempts: 5,
+			reconnectionDelay: 3000 * (this.connectionAttempts + 1), // Exponential backoff
+			reconnectionDelayMax: 30000,
+			reconnectionAttempts: 3,
 			forceNew: true,
 			path: '/socket.io',
 			autoConnect: false,
@@ -143,6 +152,7 @@ Client.prototype.connect = function() {
 	this.socket.on("connect", function() {
 		console.log("Socket.IO Connection Opened");
 		self.connectionTime = Date.now();
+		self.connectionAttempts = 0; // Reset attempts on successful connection
 		console.log("Sending initial hi message");
 		self.sendArray([{m: "hi"}]);
 		self.pingInterval = setInterval(function() {
@@ -174,11 +184,15 @@ Client.prototype.connect = function() {
 		self.emit("disconnect");
 		self.emit("status", "Offline mode");
 
-		if(self.connectionTime) {
-			self.connectionTime = undefined;
-			self.connectionAttempts = 0;
-		} else {
+		if(!self.connectionTime) {
 			++self.connectionAttempts;
+		}
+
+		// Attempt to reconnect if allowed
+		if (self.canConnect && self.connectionAttempts < 3) {
+			setTimeout(() => {
+				self.connect();
+			}, 3000 * (self.connectionAttempts + 1));
 		}
 	});
 
