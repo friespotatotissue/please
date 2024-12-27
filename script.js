@@ -2031,7 +2031,6 @@ Rect.prototype.contains = function(x, y) {
 	$("#room > .info").text("--");
 	gClient.on("ch", function(msg) {
     var channel = msg.ch;
-    if (!channel._id.includes("original")) return location.reload();
 		var info = $("#room > .info");
 		info.text(channel._id);
 		if(channel.settings.lobby) info.addClass("lobby");
