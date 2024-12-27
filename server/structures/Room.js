@@ -8,121 +8,84 @@ const sha1 = require('sha1');
  */
 
 class Room {
-  constructor(p, server, _id, count, set) {
+  constructor(p, server, _id, count, settings = {}) {
     this.server = server;
     this._id = _id;
-    this.count = count || 0;
-    const isLobby = _id.toLowerCase().includes('lobby');
-    this.settings = {
-      chat: true,
-      color: bgColor,
-      visible: true,
-      crownsolo: false,
-      lobby: isLobby,
-      ...set
-    };
+    this.count = count;
+    const isLobby = this._id.toLowerCase().includes('lobby');
+    if (isLobby) {
+      this.settings = {
+        chat: true,
+        color: bgColor,
+        crownsolo: false,
+        lobby: true,
+        visible: true
+      };
+    } else {
+      this.settings = {
+        chat: settings.chat != null ? settings.chat : true,
+        color: settings.color || bgColor,
+        crownsolo: settings.crownsolo != null ? settings.crownsolo : false,
+        lobby: false,
+        visible: settings.visible != null ? settings.visible : true
+      };
+    }
+    this.settings.black = this.settings.lobby ? false : this._id.toLowerCase().includes('black');
+    // eslint-disable-next-line no-extra-parens
+    this.settings.original = !this.settings.black ? (!this.settings.lobby ? this._id.toLowerCase().includes('original') : false) : false;
+    this.crown = null;
     this.ppl = [];
     this.chat = new Chat();
-    this.crown = null;
   }
-
-  update(set) {
-    if (!set) return;
-    if (set.visible !== undefined) this.settings.visible = !!set.visible;
-    if (set.chat !== undefined) this.settings.chat = !!set.chat;
-    if (set.crownsolo !== undefined) this.settings.crownsolo = !!set.crownsolo;
-    if (set.color) this.settings.color = set.color;
-    
-    // Broadcast the update
-    if (this.server) {
-      this.server.broadcastTo({
-        m: 'ch',
-        ch: this.generateJSON()
-      }, this.ppl.map(p => p._id));
-    }
-  }
-
-  findParticipant(_id) {
-    return this.ppl.find(p => p._id === _id);
-  }
-
-  newParticipant(p, socket) {
-    // Generate a unique ID for the participant
-    const id = this.count++;
-    const participant = new ParticipantRoom(
-      id,
-      p.name,
-      p.color,
-      socket.id
+  newParticipant(p) {
+    this.count++;
+    const pR = new ParticipantRoom(
+      sha1(Date.now()).substring(0, 20),
+      p.name, p.color, p._id
     );
-    this.ppl.push(participant);
-
-    // Notify others about the new participant
-    if (this.server) {
-      this.server.broadcastTo({
-        m: 'p',
-        id: participant.id,
-        name: p.name,
-        color: p.color,
-        _id: socket.id
-      }, this.ppl.map(p => p._id), [socket.id]);
-    }
-
-    return participant;
+    this.ppl.push(pR);
+    this.server.broadcastTo({
+      m: 'p',
+      color: p.color,
+      id: pR.id,
+      name: p.name,
+      x: 0,
+      y: 0,
+      _id: p._id
+    }, this.ppl.map(tpR => tpR._id), [p._id]);
+    return pR;
   }
-
+  findParticipant(_id) {
+    return this.ppl.find(p => p._id == _id);
+  }
   removeParticipant(_id) {
-    const index = this.ppl.findIndex(p => p._id === _id);
-    if (index !== -1) {
-      const participant = this.ppl[index];
-      this.ppl.splice(index, 1);
-
-      // Handle crown transfer if crown holder leaves
-      if (this.crown && this.crown.userId === _id) {
-        if (this.ppl.length > 0) {
-          // Find next connected participant
-          const nextParticipant = this.ppl[0];
-          if (nextParticipant) {
-            this.crown = {
-              participantId: nextParticipant.id,
-              userId: nextParticipant._id,
-              time: Date.now()
-            };
-            // Notify about crown transfer
-            if (this.server) {
-              this.server.broadcastTo({
-                m: 'ch',
-                ch: this.generateJSON()
-              }, this.ppl.map(p => p._id));
-            }
-          } else {
-            this.crown = null;
-          }
-        } else {
-          this.crown = null;
-        }
-      }
-
-      // Notify about participant removal
-      if (this.server) {
-        this.server.broadcastTo({
-          m: 'bye',
-          p: participant.id
-        }, this.ppl.map(p => p._id));
-      }
-    }
+    const pR = this.findParticipant(_id);
+    if (!pR) return;
+    this.count--;
+    this.ppl = this.ppl.filter(p => p._id != _id);
+    this.server.broadcastTo({
+      m: 'bye',
+      p: pR.id
+    }, this.ppl.map(tpR => tpR._id));
   }
-
+  update(settings = {}) {
+    this.settings = Object.assign(this.settings, {
+      chat: settings.chat != null ? settings.chat : this.settings.chat,
+      color: settings.color || this.settings.color,
+      crownsolo: settings.crownsolo != null ? settings.crownsolo : this.settings.crownsolo,
+      visible: settings.visible != null ? settings.visible : this.settings.visible
+    });
+  }
   generateJSON() {
-    const json = {
+    const obj = {
       _id: this._id,
       settings: this.settings,
-      count: this.server.getRoomCount(this._id)
+      count: this.count
     };
     if (this.crown) {
-      json.crown = this.crown;
+      obj.crown = this.crown;
     }
-    return json;
+    return obj;
   }
 }
 

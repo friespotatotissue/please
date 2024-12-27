@@ -18,23 +18,9 @@ class Server extends WebSocket.Server {
     // Broken Connections
     setInterval(() => {
       this.sockets.forEach(s => {
-        if (!s.isConnected || !s.ws) {
-          this.sockets.delete(s);
-          return;
-        }
-        if (s.isAlive === false) {
-          s.ws.terminate();
-          return;
-        }
+        if (s.isAlive == false) return s.ws.terminate();
         s.isAlive = false;
-        try {
-          s.ping(() => {
-            s.isAlive = true;
-          });
-        } catch (err) {
-          console.error('Ping error:', err);
-          s.ws.terminate();
-        }
+        s.ping(() => {}); // eslint-disable-line no-empty-function
       });
     }, 30000);
   }
@@ -65,19 +51,7 @@ class Server extends WebSocket.Server {
     if (Array.isArray(data) || !data.hasOwnProperty('m')) return;
     if (!['t', 'm', 'n'].includes(data.m)) console.log(data);
     if (data.m == 'hi') {
-      let p;
-      // First try to find an existing participant by IP-based ID
-      p = this.participants.get(s.ipBasedId);
-
-      // If no participant found, create a new one with IP-based ID
-      if (!p) {
-        p = this.newParticipant(s);
-      } else {
-        // Update existing participant's connection state
-        p.isConnected = true;
-        p.lastSeen = Date.now();
-      }
-
+      const p = this.newParticipant(s);
       return s.sendObject({
         m: 'hi',
         u: p.generateJSON(),
@@ -87,43 +61,28 @@ class Server extends WebSocket.Server {
     if (data.m == 'ch') {
       const p = this.getParticipant(s);
       if (!p) return;
-
+      // Old Room
+      const old = this.getRoom(p.room);
+      if (old) {
+        old.removeParticipant(p._id);
+        if (old.count <= 0) this.rooms.delete(p.room);
+      }
       // New Room
       let r = this.getRoom(data._id);
-      if (!r) {
-        r = this.newRoom(data, p);
-      }
-      
-      // Create participant first - use ipBasedId for room participants
-      let pR = r.findParticipant(s.ipBasedId);
-      if (!pR) {
-        pR = r.newParticipant(p, s);
-        r.count = r.ppl.length; // Update count when adding new participant
-      }
+      if (!r) r = this.newRoom(data, p);
+      let pR = r.findParticipant(p._id);
+      if (!pR) pR = r.newParticipant(p);
       p.room = r._id;
-
-      // Set crown only for new rooms and after participant is created
-      if (!r.crown && !r.settings.lobby) {
+      if (!r.settings.lobby && pR) {
         r.crown = {
           participantId: pR.id,
-          userId: s.ipBasedId,
-          time: Date.now()
+          userId: p.id,
+          time: new Date()
         };
+        this.rooms.set(r._id, r);
       }
-
-      // Send room info to all participants
-      const roomInfo = {
-        m: 'ch',
-        ch: r.generateJSON(),
-        p: pR.id,
-        ppl: r.ppl
-      };
-
-      // Broadcast room update to all participants
-      this.broadcastTo(roomInfo, r.ppl.map(tpR => tpR._id));
-
-      // Also send note quota info
       if (r._id.toLowerCase().includes('black')) {
+        // Send offline note quota because fuck it
         s.sendObject({
           m: 'nq',
           allowance: 8000,
@@ -131,6 +90,7 @@ class Server extends WebSocket.Server {
           histLen: 3
         });
       } else {
+        // Send lobby notequota until told otherwise
         s.sendObject({
           m: 'nq',
           allowance: 200,
@@ -138,25 +98,30 @@ class Server extends WebSocket.Server {
           histLen: 0
         });
       }
-
-      return s.sendObject(roomInfo);
+      // Clear Chat
+      s.sendObject({
+        m: 'c'
+      }, () => {
+        const chatobjs = [];
+        for (let i = 0; i < (r.chat.messages.length > 50 ? 50 : r.chat.messages.length); i++) {
+          chatobjs.unshift(r.chat.messages[i]);
+        }
+        return s.sendArray(chatobjs);
+      });
+      return s.sendObject({
+        m: 'ch',
+        ch: r.generateJSON(),
+        p: r.findParticipant(p._id).id,
+        ppl: r.ppl.length > 0 ? r.ppl : null
+      });
     }
     if (data.m == 'chset') {
       const p = this.getParticipant(s);
       if (!p) return;
       const r = this.getRoom(p.room);
       if (!r) return;
-      // Only allow crown holder to change settings
-      if (!r.crown || r.crown.userId !== p._id) return;
-      
+      if (r.crown && r.crown.userId != p._id) return;
       r.update(data.set);
-      // Broadcast the updated settings to all participants
-      const roomInfo = {
-        m: 'ch',
-        ch: r.generateJSON(),
-        ppl: r.ppl.length > 0 ? r.ppl : null
-      };
-      this.broadcastTo(roomInfo, r.ppl.map(tpR => tpR._id));
     }
     if (data.m == 'a') {
       const p = this.getParticipant(s);
@@ -231,32 +196,22 @@ class Server extends WebSocket.Server {
     if (data.m == 'userset') {
       const p = this.getParticipant(s);
       if (!p) return;
-
       if (data.set.name) {
-        const sanitizedName = this.removeTextHell(data.set.name).trim();
-        if (sanitizedName.length > 250 || !sanitizedName) {
-          data.set.name = 'Anonymous';
-        }
-        
-        // Update the participant's name
-        p.updateUser(sanitizedName, data.set.color);
-
-        // Update all rooms where this participant exists, but only for this connection
-        this.rooms.forEach(r => {
-          const pR = r.findParticipant(s.id);  // Use socket ID instead of IP-based ID
-          if (pR) {
-            pR.updateUser(p.name, p.color);
-            // Broadcast to everyone in the room
-            this.broadcastTo({
-              m: 'p',
-              color: p.color,
-              id: pR.id,
-              name: p.name,
-              _id: p._id
-            }, r.ppl.map(tpR => tpR._id));
-          }
-        });
+        if (data.set.name.length > 250 || !data.set.name.replace(/\s/g, '')) data.set.name = 'Invalid';
+        p.updateUser(this.removeTextHell(data.set.name));
       }
+      const r = this.getRoom(p.room);
+      if (!r) return;
+      const pR = r.findParticipant(p._id);
+      if (!pR) return;
+      pR.updateUser(data.set.name || 'Anonymous');
+      return this.broadcastTo({
+        m: 'p',
+        color: p.color,
+        id: pR.id,
+        name: p.name,
+        _id: p._id
+      }, r.ppl.map(tpR => tpR._id));
     }
     if (data.m == 't') {
       return s.sendObject({
@@ -268,21 +223,13 @@ class Server extends WebSocket.Server {
   }
   // Participants
   newParticipant(s) {
-    // Check if there's an existing participant with this IP
-    let p = this.participants.get(s.ipBasedId);
-    if (p) {
-      p.isConnected = true;
-      p.lastSeen = Date.now();
-      return p;
-    }
-    // Create new participant if none exists
-    p = new Participant(s.ipBasedId, 'Anonymous',
+    const p = new Participant(s.id, 'Anonymous',
       `#${Math.floor(Math.random() * 16777215).toString(16)}`);
-    this.participants.set(s.ipBasedId, p);
+    this.participants.set(s.id, p);
     return p;
   }
   getParticipant(s) {
-    return this.participants.get(s.ipBasedId);
+    return this.participants.get(s.id);
   }
   // Rooms
   newRoom(data, p) {
@@ -292,26 +239,6 @@ class Server extends WebSocket.Server {
   }
   getRoom(id) {
     return this.rooms.get(id);
-  }
-  // Add method to clean up disconnected participants
-  cleanupParticipants() {
-    this.rooms.forEach(room => {
-      const activePpl = room.ppl.filter(p => {
-        const participant = this.participants.get(p._id);
-        return participant && participant.isConnected;
-      });
-      room.ppl = activePpl;
-      room.count = activePpl.length;
-    });
-  }
-  // Add method to get accurate count of connected participants
-  getRoomCount(roomId) {
-    const room = this.rooms.get(roomId);
-    if (!room) return 0;
-    return room.ppl.filter(p => {
-      const participant = this.participants.get(p._id);
-      return participant && participant.isConnected;
-    }).length;
   }
 }
 

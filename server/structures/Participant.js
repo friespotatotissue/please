@@ -1,5 +1,4 @@
 const fs = require('fs');
-const path = require('path');
 
 /**
  * TODO: Impliment a system in which users will get their
@@ -15,98 +14,45 @@ class Participant {
     this.color = color;
     this.room = null;
     this.updates = false;
-    this.lastSeen = Date.now();
-    this.isConnected = true;  // Track connection state
-
-    // Ensure database directory exists
-    const dbDir = path.join(process.cwd(), 'database');
-    if (!fs.existsSync(dbDir)) {
-      try {
-        fs.mkdirSync(dbDir, { recursive: true });
-      } catch (e) {
-        console.error('Failed to create database directory:', e);
-      }
-    }
 
     const pdb = this.requestFile();
-    if (!pdb) {
-      // Initialize with empty object if file doesn't exist
-      this.updateFile({});
-      return;
-    }
+    if (!pdb) return;
     if (pdb[this._id]) {
       this.name = pdb[this._id].name;
       this.color = pdb[this._id].color;
-      this.lastSeen = Date.now();
-      // Update the database with new last seen time
-      pdb[this._id] = this.generateJSON();
-      this.updateFile(pdb);
     } else {
       pdb[this._id] = this.generateJSON();
       this.updateFile(pdb);
     }
   }
-
   requestFile() {
     try {
-      const filePath = path.join(process.cwd(), 'database', 'participants.json');
-      if (!fs.existsSync(filePath)) {
-        return {};
-      }
-      const data = fs.readFileSync(filePath, 'utf8');
-      return JSON.parse(data);
+      return JSON.parse(fs.readFileSync('./database/participants.json'));
     } catch (e) {
       console.error('DB REQUEST FILE', e);
-      return {};
+      return null;
     }
   }
-
   updateFile(raw) {
     try {
-      const filePath = path.join(process.cwd(), 'database', 'participants.json');
-      fs.writeFileSync(filePath, JSON.stringify(raw, null, 2), 'utf8');
-      return true;
+      fs.writeFileSync('./database/participants.json', JSON.stringify(raw));
     } catch (e) {
       console.error('DB UPDATE FILE', e);
-      return false;
     }
   }
-
   updateUser(name, color) {
-    try {
-      const pdb = this.requestFile();
-      if (!pdb) {
-        console.error('Failed to read database for update');
-        return false;
-      }
-
-      // Update the participant's data
-      this.name = name || this.name;
-      this.color = color || this.color;
-      this.lastSeen = Date.now();
-
-      // Update the database
-      pdb[this._id] = this.generateJSON();
-      const success = this.updateFile(pdb);
-
-      if (!success) {
-        console.error('Failed to update database');
-        return false;
-      }
-
-      return true;
-    } catch (e) {
-      console.error('Error in updateUser:', e);
-      return false;
-    }
+    const pdb = this.requestFile();
+    if (!pdb) return;
+    this.name = name || this.name;
+    this.color = color || this.color;
+    pdb[this._id] = this.generateJSON();
+    this.updateFile(pdb);
   }
-
   generateJSON() {
     return {
       _id: this._id,
       name: this.name,
-      color: this.color,
-      lastSeen: this.lastSeen
+      color: this.color
     };
   }
 }

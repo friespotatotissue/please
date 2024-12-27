@@ -12,14 +12,11 @@ class Socket extends EventEmitter {
     this.server = server;
     this.ws = ws;
     this.ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
-    this.id = sha1(this.ip + Date.now() + Math.random()).substring(0, 20);
-    this.ipBasedId = sha1(this.ip).substring(0, 20);
+    this.id = sha1(this.ip).substring(0, 20);
     this.isAlive = true;
-    this.isConnected = true;
-    this.connectionTime = Date.now();
     this.bindEvents();
     this.bindEventListeners();
-    this.debug('New Socket Constructed with ID: ' + this.id);
+    this.debug('New Socket Constructed');
   }
   bindEvents() {
     const self = this;
@@ -71,28 +68,20 @@ class Socket extends EventEmitter {
   }
   close() {
     this.debug('Connection Closed');
-    this.isConnected = false;
-    const p = this.server.participants.get(this.ipBasedId);
+    const p = this.server.participants.get(this.id);
+    let sExists = false;
+    // this.server.sockets.forEach(s => {
+    //   if (s.id == this.id) sExists = true;
+    // });
+    // if (sExists) return;
     if (p) {
-      const activeSockets = Array.from(this.server.sockets).filter(s => 
-        s.ipBasedId === this.ipBasedId && s.isConnected && s.id !== this.id
-      );
-      
-      if (activeSockets.length === 0) {
-        p.isConnected = false;
-        p.lastSeen = Date.now();
-
-        this.server.rooms.forEach(r => {
-          const pR = r.findParticipant(this.ipBasedId);
-          if (pR) {
-            r.removeParticipant(this.ipBasedId);
-            r.count = r.ppl.length;
-          }
-        });
-
-        this.server.cleanupParticipants();
-      }
+      this.server.participants.delete(this.id);
     }
+    this.server.rooms.forEach(r => {
+      if (r.findParticipant(this.id)) {
+        r.removeParticipant(this.id);
+      }
+    });
   }
   ping(noop) {
     return this.ws.ping(noop);
