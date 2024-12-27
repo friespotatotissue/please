@@ -6,10 +6,11 @@ const io = require('socket.io')(http, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"],
-        credentials: true
+        credentials: true,
+        allowedHeaders: ["*"]
     },
-    transports: ['websocket', 'polling'],
     allowEIO3: true,
+    transports: ['websocket', 'polling'],
     pingTimeout: 120000,
     pingInterval: 10000,
     connectTimeout: 60000,
@@ -18,7 +19,9 @@ const io = require('socket.io')(http, {
     perMessageDeflate: true,
     httpCompression: true,
     upgradeTimeout: 30000,
-    destroyUpgrade: false
+    destroyUpgrade: false,
+    path: '/socket.io/',
+    serveClient: true
 });
 
 // Import original server structures
@@ -29,8 +32,18 @@ const Room = require('./server/structures/Room');
 const ParticipantRoom = require('./server/structures/ParticipantRoom');
 const WebSocket = require('ws');
 
-// Enable CORS for all routes
-app.use(cors());
+// Enable CORS for all routes with specific options
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}));
+
+// Add health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
 
 // Serve static files
 app.use(express.static(__dirname));

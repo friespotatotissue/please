@@ -84,12 +84,16 @@ Client.prototype.connect = function() {
 			reconnectionDelayMax: 5000,
 			reconnectionAttempts: Infinity,
 			forceNew: true,
-			path: '/socket.io',
+			path: '/socket.io/',
 			timeout: 60000,
 			pingTimeout: 60000,
 			pingInterval: 25000,
 			autoConnect: true,
-			rejectUnauthorized: false
+			rejectUnauthorized: false,
+			withCredentials: true,
+			extraHeaders: {
+				"Access-Control-Allow-Origin": "*"
+			}
 		};
 
 		const serverUrl = 'https://please.up.railway.app';
@@ -99,6 +103,16 @@ Client.prototype.connect = function() {
 		
 		var self = this;
 		
+		this.socket.on("connect_error", (error) => {
+			console.error("Connection error:", error);
+			// Try websocket first, then polling
+			if (this.socket.io.opts.transports.indexOf('websocket') !== -1) {
+				console.log("Falling back to polling...");
+				this.socket.io.opts.transports = ['polling', 'websocket'];
+			}
+			self.emit("status", "Connection Error: " + error.message);
+		});
+
 		this.socket.on("connect", function() {
 			console.log("Socket.IO Connection Opened");
 			self.connectionTime = Date.now();
@@ -160,11 +174,6 @@ Client.prototype.connect = function() {
 		this.socket.on("error", function(err) {
 			console.error("Socket.IO Error:", err);
 			self.emit("status", "Socket.IO Error");
-		});
-
-		this.socket.on("connect_error", function(error) {
-			console.error("Connection error:", error);
-			self.emit("status", "Connection Error: " + error.message);
 		});
 
 		this.socket.on("message", function(data) {
