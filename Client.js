@@ -68,17 +68,8 @@ Client.prototype.stop = function() {
 };
 
 Client.prototype.connect = function() {
-	// Prevent excessive reconnection attempts
-	if (this.connectionAttempts >= 3) {
-		console.error('Max reconnection attempts reached. Stopping reconnection.');
-		this.canConnect = false;
-		this.emit("status", "Connection Failed: Too many attempts");
-		return;
-	}
-
 	if(!this.canConnect || !this.isSupported() || this.isConnected() || this.isConnecting())
 		return;
-
 	this.emit("status", "Connecting...");
 	console.log("Attempting Socket.IO connection with canConnect:", this.canConnect, 
 		"isSupported:", this.isSupported(), 
@@ -87,18 +78,18 @@ Client.prototype.connect = function() {
 	
 	try {
 		const socketOptions = {
-			transports: ['websocket'],
+			transports: ['websocket', 'polling'],
 			reconnection: true,
-			reconnectionDelay: 3000 * (this.connectionAttempts + 1), // Exponential backoff
-			reconnectionDelayMax: 30000,
-			reconnectionAttempts: 3,
+			reconnectionDelay: 1000,
+			reconnectionDelayMax: 5000,
+			reconnectionAttempts: Infinity,
 			forceNew: true,
 			path: '/socket.io',
-			autoConnect: false,
-			timeout: 10000
+			autoConnect: true,
+			withCredentials: true
 		};
 
-		const serverUrl = 'wss://please.up.railway.app';
+		const serverUrl = 'https://please.up.railway.app';
 		console.log('Connecting to server:', serverUrl);
 
 		if(typeof module !== "undefined") {
@@ -126,21 +117,6 @@ Client.prototype.connect = function() {
 			this.emit("status", "Connection Timeout");
 		});
 
-		this.socket.on('error', (error) => {
-			console.error('Socket error:', error);
-			this.emit("status", "Socket Error: " + error.message);
-		});
-
-		this.socket.io.on("error", (error) => {
-			console.error('Transport error:', error);
-			this.emit("status", "Transport Error: " + error.message);
-		});
-
-		this.socket.io.on("reconnect_attempt", (attempt) => {
-			console.log('Reconnection attempt:', attempt);
-			this.emit("status", "Reconnecting... (Attempt " + attempt + ")");
-		});
-
 	} catch (err) {
 		console.error("Socket.IO Connection Error:", err);
 		this.emit("status", "Connection Error: " + err.message);
@@ -152,8 +128,6 @@ Client.prototype.connect = function() {
 	this.socket.on("connect", function() {
 		console.log("Socket.IO Connection Opened");
 		self.connectionTime = Date.now();
-		self.connectionAttempts = 0; // Reset attempts on successful connection
-		console.log("Sending initial hi message");
 		self.sendArray([{m: "hi"}]);
 		self.pingInterval = setInterval(function() {
 			self.sendArray([{m: "t", e: Date.now()}]);
@@ -184,15 +158,11 @@ Client.prototype.connect = function() {
 		self.emit("disconnect");
 		self.emit("status", "Offline mode");
 
-		if(!self.connectionTime) {
+		if(self.connectionTime) {
+			self.connectionTime = undefined;
+			self.connectionAttempts = 0;
+		} else {
 			++self.connectionAttempts;
-		}
-
-		// Attempt to reconnect if allowed
-		if (self.canConnect && self.connectionAttempts < 3) {
-			setTimeout(() => {
-				self.connect();
-			}, 3000 * (self.connectionAttempts + 1));
 		}
 	});
 
@@ -202,20 +172,13 @@ Client.prototype.connect = function() {
 	});
 
 	this.socket.on("message", function(data) {
-		console.log("Raw message received:", data);
 		try {
 			var transmission = JSON.parse(data);
-			console.log("Parsed message:", transmission);
 			for(var i = 0; i < transmission.length; i++) {
 				self.emit(transmission[i].m, transmission[i]);
 			}
 		} catch (err) {
 			console.error("Error parsing message:", err);
-			// Try handling it as a direct message object if parsing fails
-			if (data && typeof data === 'object' && data.m) {
-				console.log("Handling as direct message object");
-				self.emit(data.m, data);
-			}
 		}
 	});
 };
@@ -223,11 +186,9 @@ Client.prototype.connect = function() {
 Client.prototype.bindEventListeners = function() {
 	var self = this;
 	this.on("hi", function(msg) {
-		console.log("Received hi response from server:", msg);
 		self.user = msg.u;
 		self.receiveServerTime(msg.t, msg.e || undefined);
 		if(self.desiredChannelId) {
-			console.log("Sending channel join request for:", self.desiredChannelId);
 			self.setChannel();
 		}
 	});
@@ -235,11 +196,6 @@ Client.prototype.bindEventListeners = function() {
 		self.receiveServerTime(msg.t, msg.e || undefined);
 	});
 	this.on("ch", function(msg) {
-		console.log("Received channel info:", msg);
-		if (!msg.ch) {
-			console.error("Received invalid channel message:", msg);
-			return;
-		}
 		self.desiredChannelId = msg.ch._id;
 		self.channel = msg.ch;
 		if(msg.p) self.participantId = msg.p;
