@@ -1176,10 +1176,11 @@ Rect.prototype.contains = function(x, y) {
 	
 	// Add robust connection handling
 	var reconnectionAttempts = 0;
-	var maxReconnectionAttempts = 10; // Increased from 5
+	var maxReconnectionAttempts = 10;
 	var reconnectionDelay = 2000;
-	var reconnectionBackoff = 1.5; // Exponential backoff multiplier
+	var reconnectionBackoff = 1.5;
 	var isReconnecting = false;
+	var joinTimeout = null;
 
 	function generateUniqueClientId() {
 		return Date.now().toString(36) + Math.random().toString(36).substr(2);
@@ -1189,11 +1190,12 @@ Rect.prototype.contains = function(x, y) {
 	if (!localStorage.getItem('clientId')) {
 		localStorage.setItem('clientId', generateUniqueClientId());
 	}
-	
+
 	gClient.clientId = localStorage.getItem('clientId');
 
 	gClient.on("disconnect", function() {
 		console.log("Disconnected. Attempting to reconnect...");
+		if (joinTimeout) clearTimeout(joinTimeout);
 		if (!isReconnecting) {
 			isReconnecting = true;
 			attemptReconnect();
@@ -1228,10 +1230,24 @@ Rect.prototype.contains = function(x, y) {
 		
 		// Send client ID to server for validation
 		gClient.sendArray([{m: "hi", clientId: gClient.clientId}]);
+		
+		// Set a timeout for joining channel
+		if (joinTimeout) clearTimeout(joinTimeout);
+		joinTimeout = setTimeout(function() {
+			console.log("Channel join timeout - attempting to rejoin");
+			if (gClient.desiredChannelId) {
+				gClient.setChannel(gClient.desiredChannelId);
+			}
+		}, 5000);
 	});
 
-	// Handle crown ownership based on client ID
+	// Handle successful channel join
 	gClient.on("ch", function(msg) {
+		if (joinTimeout) {
+			clearTimeout(joinTimeout);
+			joinTimeout = null;
+		}
+		
 		if (msg.ch.crown && msg.ch.crown.clientId === gClient.clientId && msg.ch.crown.userId === gClient.user._id) {
 			// This client is the true owner
 			msg.ch.crown.participantId = gClient.participantId;
@@ -1241,6 +1257,9 @@ Rect.prototype.contains = function(x, y) {
 			// Hide room settings button for non-crown holders
 			document.getElementById("room-settings-btn").style.display = "none";
 		}
+		
+		// Update status
+		gClient.emit("status", "Connected!");
 	});
 
 	gClient.setChannel(channel_id);

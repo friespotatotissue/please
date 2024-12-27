@@ -54,6 +54,7 @@ class Server extends WebSocket.Server {
     try {
       if (data.m == 'hi') {
         const p = this.newParticipant(s);
+        s.clientId = data.clientId; // Store the client ID
         return s.sendObject({
           m: 'hi',
           u: p.generateJSON(),
@@ -69,23 +70,35 @@ class Server extends WebSocket.Server {
 
       if (data.m == 'ch') {
         const p = this.getParticipant(s);
-        if (!p) return;
+        if (!p) {
+          console.log('No participant found for socket, creating new one');
+          p = this.newParticipant(s);
+        }
+        
         // Old Room
         const old = this.getRoom(p.room);
         if (old) {
           old.removeParticipant(p._id);
           if (old.count <= 0) this.rooms.delete(p.room);
         }
+        
         // New Room
         let r = this.getRoom(data._id);
-        if (!r) r = this.newRoom(data, p);
+        if (!r) {
+          console.log('Creating new room:', data._id);
+          r = this.newRoom(data, p);
+        }
+        
         let pR = r.findParticipant(p._id);
-        if (!pR) pR = r.newParticipant(p);
+        if (!pR) {
+          console.log('Adding participant to room:', p._id);
+          pR = r.newParticipant(p);
+        }
         p.room = r._id;
         
         // Update crown handling
         if (!r.settings.lobby && r.crown) {
-          if (r.crown.userId === p._id) {
+          if (r.crown.userId === p._id || r.crown.clientId === s.clientId) {
             r.crown.participantId = pR.id;
             r.crown.clientId = s.clientId;
             this.rooms.set(r._id, r);
@@ -98,39 +111,54 @@ class Server extends WebSocket.Server {
           }
         }
         
-        if (r._id.toLowerCase().includes('black')) {
-          // Send offline note quota because fuck it
+        // Send room state to participant
+        try {
+          // Send note quota
+          if (r._id.toLowerCase().includes('black')) {
+            s.sendObject({
+              m: 'nq',
+              allowance: 8000,
+              max: 24000,
+              histLen: 3
+            });
+          } else {
+            s.sendObject({
+              m: 'nq',
+              allowance: 200,
+              max: 600,
+              histLen: 0
+            });
+          }
+          
+          // Clear and send chat history
           s.sendObject({
-            m: 'nq',
-            allowance: 8000,
-            max: 24000,
-            histLen: 3
+            m: 'c'
+          }, () => {
+            const chatobjs = [];
+            for (let i = 0; i < (r.chat.messages.length > 50 ? 50 : r.chat.messages.length); i++) {
+              chatobjs.unshift(r.chat.messages[i]);
+            }
+            return s.sendArray(chatobjs);
           });
-        } else {
-          // Send lobby notequota until told otherwise
+          
+          // Send room info
+          return s.sendObject({
+            m: 'ch',
+            ch: r.generateJSON(),
+            p: pR.id,
+            ppl: r.ppl.length > 0 ? r.ppl : null
+          });
+        } catch (err) {
+          console.error('Error sending room state:', err);
+          // Try to recover by removing participant and having them rejoin
+          r.removeParticipant(p._id);
           s.sendObject({
-            m: 'nq',
-            allowance: 200,
-            max: 600,
-            histLen: 0
+            m: 'notification',
+            title: 'Error',
+            text: 'Failed to join room. Please try again.',
+            duration: 7000
           });
         }
-        // Clear Chat
-        s.sendObject({
-          m: 'c'
-        }, () => {
-          const chatobjs = [];
-          for (let i = 0; i < (r.chat.messages.length > 50 ? 50 : r.chat.messages.length); i++) {
-            chatobjs.unshift(r.chat.messages[i]);
-          }
-          return s.sendArray(chatobjs);
-        });
-        return s.sendObject({
-          m: 'ch',
-          ch: r.generateJSON(),
-          p: r.findParticipant(p._id).id,
-          ppl: r.ppl.length > 0 ? r.ppl : null
-        });
       }
       if (data.m == 'chset') {
         const p = this.getParticipant(s);
@@ -274,6 +302,12 @@ class Server extends WebSocket.Server {
       }
     } catch (err) {
       console.error('Error handling socket data:', err);
+      s.sendObject({
+        m: 'notification',
+        title: 'Error',
+        text: 'An error occurred. Please try refreshing the page.',
+        duration: 7000
+      });
     }
   }
   // Participants
