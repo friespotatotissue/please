@@ -87,18 +87,23 @@ class Server extends WebSocket.Server {
       let r = this.getRoom(data._id);
       if (!r) {
         r = this.newRoom(data, p);
-        // Only set crown for new rooms
-        if (!r.settings.lobby) {
-          r.crown = {
-            participantId: r.findParticipant(p._id).id,
-            userId: p._id,
-            time: Date.now()
-          };
-        }
       }
+      
+      // Create participant first
       let pR = r.findParticipant(p._id);
-      if (!pR) pR = r.newParticipant(p);
+      if (!pR) {
+        pR = r.newParticipant(p);
+      }
       p.room = r._id;
+
+      // Set crown only for new rooms and after participant is created
+      if (!r.crown && !r.settings.lobby) {
+        r.crown = {
+          participantId: pR.id,
+          userId: p._id,
+          time: Date.now()
+        };
+      }
 
       // Send room info to all participants
       const roomInfo = {
@@ -110,6 +115,23 @@ class Server extends WebSocket.Server {
 
       // Broadcast room update to all participants
       this.broadcastTo(roomInfo, r.ppl.map(tpR => tpR._id));
+
+      // Also send note quota info
+      if (r._id.toLowerCase().includes('black')) {
+        s.sendObject({
+          m: 'nq',
+          allowance: 8000,
+          max: 24000,
+          histLen: 3
+        });
+      } else {
+        s.sendObject({
+          m: 'nq',
+          allowance: 200,
+          max: 600,
+          histLen: 0
+        });
+      }
 
       return s.sendObject(roomInfo);
     }

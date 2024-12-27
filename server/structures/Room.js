@@ -11,27 +11,34 @@ class Room {
   constructor(p, server, _id, count, set) {
     this.server = server;
     this._id = _id;
-    this.count = count;
+    this.count = count || 0;
     this.settings = {
       chat: true,
       color: '#ecfaed',
       visible: true,
       crownsolo: false,
-      lobby: false,
+      lobby: _id.toLowerCase().includes('lobby'),
       ...set
     };
     this.ppl = [];
-    this.chat = {
-      messages: []
-    };
+    this.chat = new Chat();
     this.crown = null;
   }
 
   update(set) {
+    if (!set) return;
     if (set.visible !== undefined) this.settings.visible = !!set.visible;
     if (set.chat !== undefined) this.settings.chat = !!set.chat;
     if (set.crownsolo !== undefined) this.settings.crownsolo = !!set.crownsolo;
     if (set.color) this.settings.color = set.color;
+    
+    // Broadcast the update
+    if (this.server) {
+      this.server.broadcastTo({
+        m: 'ch',
+        ch: this.generateJSON()
+      }, this.ppl.map(p => p._id));
+    }
   }
 
   findParticipant(_id) {
@@ -39,21 +46,37 @@ class Room {
   }
 
   newParticipant(p) {
+    // Generate a unique ID for the participant
+    const id = this.count++;
     const participant = new ParticipantRoom(
-      this.count++,
+      id,
       p.name,
       p.color,
       p._id
     );
     this.ppl.push(participant);
+
+    // Notify others about the new participant
+    if (this.server) {
+      this.server.broadcastTo({
+        m: 'p',
+        id: participant.id,
+        name: p.name,
+        color: p.color,
+        _id: p._id
+      }, this.ppl.map(p => p._id), [p._id]);
+    }
+
     return participant;
   }
 
   removeParticipant(_id) {
     const index = this.ppl.findIndex(p => p._id === _id);
     if (index !== -1) {
+      const participant = this.ppl[index];
       this.ppl.splice(index, 1);
-      // If crown holder leaves, pass crown to next person or remove it
+
+      // Handle crown transfer if crown holder leaves
       if (this.crown && this.crown.userId === _id) {
         if (this.ppl.length > 0) {
           const nextParticipant = this.ppl[0];
@@ -62,20 +85,38 @@ class Room {
             userId: nextParticipant._id,
             time: Date.now()
           };
+          // Notify about crown transfer
+          if (this.server) {
+            this.server.broadcastTo({
+              m: 'ch',
+              ch: this.generateJSON()
+            }, this.ppl.map(p => p._id));
+          }
         } else {
           this.crown = null;
         }
+      }
+
+      // Notify about participant removal
+      if (this.server) {
+        this.server.broadcastTo({
+          m: 'bye',
+          p: participant.id
+        }, this.ppl.map(p => p._id));
       }
     }
   }
 
   generateJSON() {
-    return {
+    const json = {
       _id: this._id,
       settings: this.settings,
-      crown: this.crown,
       count: this.count
     };
+    if (this.crown) {
+      json.crown = this.crown;
+    }
+    return json;
   }
 }
 
