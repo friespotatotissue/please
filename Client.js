@@ -84,6 +84,9 @@ Client.prototype.connect = function() {
 			timeout: 20000,
 			query: {
 				clientId: this.clientId
+			},
+			extraHeaders: {
+				"User-Agent": navigator.userAgent
 			}
 		};
 
@@ -142,7 +145,11 @@ Client.prototype.connect = function() {
 			// Don't clear user state immediately on disconnect
 			if (reason === 'io server disconnect' || reason === 'transport close') {
 				// Server initiated disconnect - attempt immediate reconnection
-				self.socket.connect();
+				setTimeout(() => {
+					if (!self.isConnected()) {
+						self.socket.connect();
+					}
+				}, 1000);
 			} else {
 				// Clear intervals but maintain state for potential reconnection
 				clearInterval(self.pingInterval);
@@ -162,8 +169,18 @@ Client.prototype.connect = function() {
 				// Force a new connection after multiple failures
 				self.socket.disconnect();
 				setTimeout(() => {
-					self.connect();
+					if (!self.isConnected()) {
+						self.connect();
+					}
 				}, 1000);
+			}
+		});
+
+		this.socket.on("error", function(error) {
+			console.error("Socket error:", error);
+			if (!self.isConnected()) {
+				self.emit("status", "Connection Error: " + error.message);
+				self.connect();
 			}
 		});
 

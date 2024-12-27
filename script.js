@@ -433,20 +433,52 @@ Rect.prototype.contains = function(x, y) {
 		req.addEventListener("readystatechange", function(evt) {
 			if(req.readyState !== 4) return;
 			try {
-				audio.context.decodeAudioData(req.response, function(buffer) {
-					audio.sounds[id] = buffer;
-					if(cb) cb();
-				});
+				if (req.status !== 200) {
+					throw new Error("HTTP Status " + req.status + " for " + url);
+				}
+				
+				audio.context.decodeAudioData(req.response, 
+					function(buffer) {
+						audio.sounds[id] = buffer;
+						if(cb) cb();
+					},
+					function(error) {
+						console.error("Error decoding audio data for", id, ":", error);
+						// Try to load a fallback format if available
+						if (url.endsWith('.mp3') && !url.includes('fallback')) {
+							var fallbackUrl = url.replace('.mp3', '.wav');
+							audio.load(id, fallbackUrl, cb);
+						} else {
+							new Notification({
+								id: "audio-decode-error", 
+								title: "Audio Error", 
+								text: "Failed to decode audio for " + id + ". Some sounds may not play.",
+								target: "#piano", 
+								duration: 5000
+							});
+						}
+					}
+				);
 			} catch(e) {
-				/*throw new Error(e.message
-					+ " / id: " + id
-					+ " / url: " + url
-					+ " / status: " + req.status
-					+ " / ArrayBuffer: " + (req.response instanceof ArrayBuffer)
-					+ " / byteLength: " + (req.response && req.response.byteLength ? req.response.byteLength : "undefined"));*/
-				new Notification({id: "audio-download-error", title: "Problem", text: "For some reason, an audio download failed with a status of " + req.status + ". ",
-					target: "#piano", duration: 10000});
+				console.error("Error loading audio:", e);
+				new Notification({
+					id: "audio-download-error", 
+					title: "Audio Error", 
+					text: "Failed to load audio file " + id + ": " + e.message,
+					target: "#piano", 
+					duration: 5000
+				});
 			}
+		});
+		req.addEventListener("error", function(err) {
+			console.error("Error loading audio file:", err);
+			new Notification({
+				id: "audio-network-error", 
+				title: "Audio Error", 
+				text: "Network error while loading audio file " + id,
+				target: "#piano", 
+				duration: 5000
+			});
 		});
 		req.send();
 	};
@@ -1309,10 +1341,10 @@ Rect.prototype.contains = function(x, y) {
 			if(msg.p) gClient.participantId = msg.p;
 			
 			if(msg.ppl) {
+				// Reset all participants first
 				for(var id in gClient.ppl) {
 					if(!gClient.ppl.hasOwnProperty(id)) continue;
 					var part = gClient.ppl[id];
-					// Reset owner status for all participants
 					$(part.nameDiv).removeClass("owner");
 					$(part.cursorDiv).removeClass("owner");
 				}
@@ -1334,10 +1366,28 @@ Rect.prototype.contains = function(x, y) {
 				}
 			}
 			
+			// Update room settings button visibility
 			if(gClient.isOwner()) {
 				$("#room-settings-btn").show();
 			} else {
 				$("#room-settings-btn").hide();
+			}
+
+			// Update room info display
+			var info = $("#room > .info");
+			info.text(msg.ch._id);
+			if(msg.ch.settings.lobby) {
+				info.addClass("lobby");
+				info.css({
+					'color': '#ffb726', // Golden color for lobby
+					'text-shadow': '0px 0px 3px rgba(255, 183, 38, 0.5)'
+				});
+			} else {
+				info.removeClass("lobby");
+				info.css({
+					'color': '',
+					'text-shadow': ''
+				});
 			}
 		});
 		function updateCursor(msg) {
@@ -1500,6 +1550,8 @@ Rect.prototype.contains = function(x, y) {
 			}
 		});
 		$("#room-settings .submit").click(function() {
+			if(!gClient.channel || !gClient.isOwner()) return;
+			
 			var settings = {
 				visible: $("#room-settings .checkbox[name=visible]").is(":checked"),
 				chat: $("#room-settings .checkbox[name=chat]").is(":checked"),

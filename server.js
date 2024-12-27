@@ -30,11 +30,31 @@ const WebSocket = require('ws');
 // Enable CORS for all routes
 app.use(cors());
 
-// Serve static files - make sure this comes before route handlers
-app.use(express.static(path.join(__dirname, 'public')));
-app.use('/piano', express.static(path.join(__dirname)));
+// Serve static files with proper MIME types
+app.use(express.static(path.join(__dirname), {
+    setHeaders: (res, path) => {
+        if (path.endsWith('.js')) {
+            res.setHeader('Content-Type', 'application/javascript');
+        } else if (path.endsWith('.mp3')) {
+            res.setHeader('Content-Type', 'audio/mpeg');
+        } else if (path.endsWith('.wav')) {
+            res.setHeader('Content-Type', 'audio/wav');
+        }
+    }
+}));
 
-// Handle room routes - this should come after static file handling
+// Root route redirect
+app.get('/', (req, res) => {
+    res.redirect('/piano/lobby');
+});
+
+// Specific route for worker file
+app.get('/piano/workerTimer.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript');
+    res.sendFile(path.join(__dirname, 'workerTimer.js'));
+});
+
+// Handle room routes
 app.get('/piano/:roomId', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
