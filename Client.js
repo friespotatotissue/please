@@ -84,107 +84,92 @@ Client.prototype.connect = function() {
 			reconnectionDelayMax: 5000,
 			reconnectionAttempts: Infinity,
 			forceNew: true,
-			path: '/socket.io',
-			autoConnect: true
+			path: '/socket.io'
 		};
 
 		const serverUrl = 'https://please.up.railway.app';
 		console.log('Connecting to server:', serverUrl);
 
-		if(typeof module !== "undefined") {
-			// nodejsicle
-			this.socket = io(serverUrl, socketOptions);
-		} else {
-			this.socket = io(serverUrl, socketOptions);
-		}
+		this.socket = io(serverUrl, socketOptions);
 		
 		var self = this;
-		self.socket.on("connect", function() {
+		
+		this.socket.on("connect", function() {
+			console.log("Socket.IO Connection Opened");
 			self.connectionTime = Date.now();
 			self.connectionAttempts = 0;
 			self.connected = true;
+			
+			self.sendArray([{m: "hi"}]);
+			
+			self.pingInterval = setInterval(function() {
+				self.sendArray([{m: "t", e: Date.now()}]);
+			}, 20000);
+			
+			self.noteBuffer = [];
+			self.noteBufferTime = 0;
+			self.noteFlushInterval = setInterval(function() {
+				if(self.noteBufferTime && self.noteBuffer.length > 0) {
+					self.sendArray([{m: "n", t: self.noteBufferTime + self.serverTimeOffset, n: self.noteBuffer}]);
+					self.noteBufferTime = 0;
+					self.noteBuffer = [];
+				}
+			}, 200);
+
 			self.emit("connect");
 			self.emit("status", "Joining channel...");
+			
 			if(self.desiredChannelId) {
 				self.setChannel(self.desiredChannelId, self.desiredChannelSettings);
 			}
 		});
 
-		// Add connection event listeners
-		this.socket.on('connect_error', (error) => {
-			console.error('Connection error:', error);
-			this.emit("status", "Connection Error: " + error.message);
+		this.socket.on("disconnect", function() {
+			console.log("Socket.IO Connection Closed");
+			self.user = undefined;
+			self.participantId = undefined;
+			self.channel = undefined;
+			self.setParticipants([]);
+			clearInterval(self.pingInterval);
+			clearInterval(self.noteFlushInterval);
+			self.connected = false;
+
+			self.emit("disconnect");
+			self.emit("status", "Offline mode");
+
+			if(self.connectionTime) {
+				self.connectionTime = undefined;
+				self.connectionAttempts = 0;
+			} else {
+				++self.connectionAttempts;
+			}
 		});
 
-		this.socket.on('connect_timeout', () => {
-			console.error('Connection timeout');
-			this.emit("status", "Connection Timeout");
+		this.socket.on("error", function(err) {
+			console.error("Socket.IO Error:", err);
+			self.emit("status", "Socket.IO Error");
 		});
 
-	} catch (err) {
+		this.socket.on("connect_error", function(error) {
+			console.error("Connection error:", error);
+			self.emit("status", "Connection Error: " + error.message);
+		});
+
+		this.socket.on("message", function(data) {
+			try {
+				var transmission = JSON.parse(data);
+				for(var i = 0; i < transmission.length; i++) {
+					self.emit(transmission[i].m, transmission[i]);
+				}
+			} catch(err) {
+				console.error("Error parsing message:", err);
+			}
+		});
+
+	} catch(err) {
 		console.error("Socket.IO Connection Error:", err);
 		this.emit("status", "Connection Error: " + err.message);
-		return;
 	}
-
-	var self = this;
-	
-	this.socket.on("connect", function() {
-		console.log("Socket.IO Connection Opened");
-		self.connectionTime = Date.now();
-		self.sendArray([{m: "hi"}]);
-		self.pingInterval = setInterval(function() {
-			self.sendArray([{m: "t", e: Date.now()}]);
-		}, 20000);
-		self.noteBuffer = [];
-		self.noteBufferTime = 0;
-		self.noteFlushInterval = setInterval(function() {
-			if(self.noteBufferTime && self.noteBuffer.length > 0) {
-				self.sendArray([{m: "n", t: self.noteBufferTime + self.serverTimeOffset, n: self.noteBuffer}]);
-				self.noteBufferTime = 0;
-				self.noteBuffer = [];
-			}
-		}, 200);
-
-		self.emit("connect");
-		self.emit("status", "Joining channel...");
-	});
-
-	this.socket.on("disconnect", function() {
-		console.log("Socket.IO Connection Closed");
-		self.user = undefined;
-		self.participantId = undefined;
-		self.channel = undefined;
-		self.setParticipants([]);
-		clearInterval(self.pingInterval);
-		clearInterval(self.noteFlushInterval);
-
-		self.emit("disconnect");
-		self.emit("status", "Offline mode");
-
-		if(self.connectionTime) {
-			self.connectionTime = undefined;
-			self.connectionAttempts = 0;
-		} else {
-			++self.connectionAttempts;
-		}
-	});
-
-	this.socket.on("error", function(err) {
-		console.error("Socket.IO Error:", err);
-		self.emit("status", "Socket.IO Error");
-	});
-
-	this.socket.on("message", function(data) {
-		try {
-			var transmission = JSON.parse(data);
-			for(var i = 0; i < transmission.length; i++) {
-				self.emit(transmission[i].m, transmission[i]);
-			}
-		} catch (err) {
-			console.error("Error parsing message:", err);
-		}
-	});
 };
 
 Client.prototype.bindEventListeners = function() {

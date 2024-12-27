@@ -47,10 +47,15 @@ io.on('connection', (socket) => {
                 messages.forEach(msg => {
                     switch(msg.m) {
                         case "hi":
-                            // Send initial hi response without any redirects
+                            // Send initial hi response with unique user ID
+                            const userId = socket.id;
                             socket.emit('message', JSON.stringify([{
                                 m: "hi",
-                                u: { _id: socket.id, name: "Anonymous" },
+                                u: { 
+                                    _id: userId,
+                                    name: "Anonymous",
+                                    color: "#" + Math.floor(Math.random()*16777215).toString(16) // Random color
+                                },
                                 t: Date.now()
                             }]));
                             break;
