@@ -81,18 +81,18 @@ class Socket extends EventEmitter {
       if (activeSockets.length === 0) {
         p.isConnected = false;
         p.lastSeen = Date.now();
+
+        this.server.rooms.forEach(r => {
+          const pR = r.findParticipant(this.ipBasedId);
+          if (pR) {
+            r.removeParticipant(this.ipBasedId);
+            r.count = r.ppl.length;
+          }
+        });
+
+        this.server.cleanupParticipants();
       }
     }
-
-    this.server.rooms.forEach(r => {
-      const pR = r.findParticipant(this.id);
-      if (pR) {
-        r.removeParticipant(this.id);
-        r.count = r.ppl.length;
-      }
-    });
-
-    this.server.cleanupParticipants();
   }
   ping(noop) {
     return this.ws.ping(noop);

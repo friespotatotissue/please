@@ -76,14 +76,6 @@ class Server extends WebSocket.Server {
         // Update existing participant's connection state
         p.isConnected = true;
         p.lastSeen = Date.now();
-        // Remove participant from any old rooms only if using same socket ID
-        this.rooms.forEach(r => {
-          const existingPR = r.findParticipant(s.id);
-          if (existingPR) {
-            r.removeParticipant(s.id);
-            if (r.count <= 0) this.rooms.delete(r._id);
-          }
-        });
       }
 
       return s.sendObject({
@@ -95,23 +87,15 @@ class Server extends WebSocket.Server {
     if (data.m == 'ch') {
       const p = this.getParticipant(s);
       if (!p) return;
-      // Old Room - only remove from rooms where this socket ID exists
-      const old = this.getRoom(p.room);
-      if (old) {
-        const existingPR = old.findParticipant(s.id);
-        if (existingPR) {
-          old.removeParticipant(s.id);
-          if (old.count <= 0) this.rooms.delete(old._id);
-        }
-      }
+
       // New Room
       let r = this.getRoom(data._id);
       if (!r) {
         r = this.newRoom(data, p);
       }
       
-      // Create participant first - use socket ID for unique identification
-      let pR = r.findParticipant(s.id);
+      // Create participant first - use ipBasedId for room participants
+      let pR = r.findParticipant(s.ipBasedId);
       if (!pR) {
         pR = r.newParticipant(p, s);
         r.count = r.ppl.length; // Update count when adding new participant
@@ -122,7 +106,7 @@ class Server extends WebSocket.Server {
       if (!r.crown && !r.settings.lobby) {
         r.crown = {
           participantId: pR.id,
-          userId: s.id,
+          userId: s.ipBasedId,
           time: Date.now()
         };
       }
@@ -136,7 +120,7 @@ class Server extends WebSocket.Server {
       };
 
       // Broadcast room update to all participants
-      this.broadcastTo(roomInfo, r.ppl.map(tpR => tpR.id));
+      this.broadcastTo(roomInfo, r.ppl.map(tpR => tpR._id));
 
       // Also send note quota info
       if (r._id.toLowerCase().includes('black')) {
