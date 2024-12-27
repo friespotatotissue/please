@@ -19,6 +19,8 @@ app.use(cors());
 app.use(express.static(__dirname));
 
 // Store active channels and participants
+const participants = new Map();
+
 const channels = {
     lobby: {
         _id: "lobby",
@@ -31,6 +33,18 @@ const channels = {
         participants: new Map()
     }
 };
+
+// Helper function to create a new participant
+function createParticipant(id, name) {
+    const color = "#" + Math.floor(Math.random()*16777215).toString(16);
+    const participant = {
+        _id: id,
+        name: name || "Anonymous",
+        color: color
+    };
+    participants.set(id, participant);
+    return participant;
+}
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
@@ -47,15 +61,11 @@ io.on('connection', (socket) => {
                 messages.forEach(msg => {
                     switch(msg.m) {
                         case "hi":
-                            // Send initial hi response with unique user ID
-                            const userId = socket.id;
+                            // Create and send participant info
+                            const newParticipant = createParticipant(socket.id);
                             socket.emit('message', JSON.stringify([{
                                 m: "hi",
-                                u: { 
-                                    _id: userId,
-                                    name: "Anonymous",
-                                    color: "#" + Math.floor(Math.random()*16777215).toString(16) // Random color
-                                },
+                                u: newParticipant,
                                 t: Date.now()
                             }]));
                             break;
@@ -63,6 +73,8 @@ io.on('connection', (socket) => {
                         case "ch":
                             // Handle channel join request
                             const channelId = msg._id || "lobby";
+                            const p = participants.get(socket.id);
+                            if (!p) return;
                             
                             // Leave current channel if any
                             if (currentChannel) {
