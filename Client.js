@@ -86,7 +86,8 @@ Client.prototype.connect = function() {
 			forceNew: true,
 			path: '/socket.io',
 			autoConnect: true,
-			withCredentials: true
+			withCredentials: true,
+			timeout: 20000
 		};
 
 		const serverUrl = 'https://please.up.railway.app';
@@ -115,6 +116,21 @@ Client.prototype.connect = function() {
 		this.socket.on('connect_timeout', () => {
 			console.error('Connection timeout');
 			this.emit("status", "Connection Timeout");
+		});
+
+		this.socket.on('error', (error) => {
+			console.error('Socket error:', error);
+			this.emit("status", "Socket Error: " + error.message);
+		});
+
+		this.socket.io.on("error", (error) => {
+			console.error('Transport error:', error);
+			this.emit("status", "Transport Error: " + error.message);
+		});
+
+		this.socket.io.on("reconnect_attempt", (attempt) => {
+			console.log('Reconnection attempt:', attempt);
+			this.emit("status", "Reconnecting... (Attempt " + attempt + ")");
 		});
 
 	} catch (err) {
