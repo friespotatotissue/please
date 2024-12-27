@@ -408,51 +408,59 @@ Rect.prototype.contains = function(x, y) {
 	AudioEngineWeb.prototype.init = function(cb) {
 		AudioEngine.prototype.init.call(this);
 
-		const initAudioContext = () => {
-			if (!this.context) {
-				this.context = new AudioContext({latencyHint: 'interactive'});
-				this.masterGain = this.context.createGain();
-				this.masterGain.connect(this.context.destination);
-				this.masterGain.gain.value = this.volume;
-				
-				if (cb) cb();
-			} else if (this.context.state === 'suspended') {
-				this.context.resume();
-			}
-		};
+		try {
+			// Create audio context only after user interaction
+			const initAudioContext = () => {
+				if (!this.context) {
+					this.context = new (window.AudioContext || window.webkitAudioContext)({latencyHint: 'interactive'});
+					
+					// Create and connect nodes
+					this.masterGain = this.context.createGain();
+					this.masterGain.connect(this.context.destination);
+					this.masterGain.gain.value = this.volume;
 
-		// Initialize audio on first user interaction
-		const userInteractionEvents = ['mousedown', 'keydown', 'touchstart'];
-		const initializeOnInteraction = () => {
-			initAudioContext();
+					this.limiterNode = this.context.createDynamicsCompressor();
+					this.limiterNode.threshold.value = -10;
+					this.limiterNode.knee.value = 0;
+					this.limiterNode.ratio.value = 20;
+					this.limiterNode.attack.value = 0;
+					this.limiterNode.release.value = 0.1;
+					this.limiterNode.connect(this.masterGain);
+
+					// for synth mix
+					this.pianoGain = this.context.createGain();
+					this.pianoGain.gain.value = 0.5;
+					this.pianoGain.connect(this.limiterNode);
+					this.synthGain = this.context.createGain();
+					this.synthGain.gain.value = 0.5;
+					this.synthGain.connect(this.limiterNode);
+
+					this.playings = {};
+					
+					if(cb) setTimeout(cb, 0);
+				} else if (this.context.state === 'suspended') {
+					this.context.resume();
+				}
+			};
+
+			// Initialize audio on first user interaction
+			const userInteractionEvents = ['mousedown', 'keydown', 'touchstart'];
+			const initializeOnInteraction = () => {
+				initAudioContext();
+				userInteractionEvents.forEach(event => {
+					document.removeEventListener(event, initializeOnInteraction);
+				});
+			};
 			userInteractionEvents.forEach(event => {
-				document.removeEventListener(event, initializeOnInteraction);
+				document.addEventListener(event, initializeOnInteraction);
 			});
-		};
-		userInteractionEvents.forEach(event => {
-			document.addEventListener(event, initializeOnInteraction);
-		});
 
-		this.limiterNode = this.context.createDynamicsCompressor();
-		this.limiterNode.threshold.value = -10;
-		this.limiterNode.knee.value = 0;
-		this.limiterNode.ratio.value = 20;
-		this.limiterNode.attack.value = 0;
-		this.limiterNode.release.value = 0.1;
-		this.limiterNode.connect(this.masterGain);
-
-		// for synth mix
-		this.pianoGain = this.context.createGain();
-		this.pianoGain.gain.value = 0.5;
-		this.pianoGain.connect(this.limiterNode);
-		this.synthGain = this.context.createGain();
-		this.synthGain.gain.value = 0.5;
-		this.synthGain.connect(this.limiterNode);
-
-		this.playings = {};
-		
-		if(cb) setTimeout(cb, 0);
-		return this;
+			return this;
+		} catch (e) {
+			console.error("Failed to initialize AudioContext:", e);
+			if(cb) setTimeout(cb, 0);
+			return this;
+		}
 	};
 
 	AudioEngineWeb.prototype.load = function(id, url, cb) {
@@ -1031,6 +1039,11 @@ Rect.prototype.contains = function(x, y) {
 		var audio_engine = AudioEngineWeb;
 
 		this.audio = new audio_engine().init(function() {
+			if (!piano.audio || !piano.audio.context) {
+				console.error("Audio initialization failed");
+				return;
+			}
+			
 			for (var i = 0; i < Math.floor(piano.keysarray.length / 2); i++) {
 				(function() {
 					var key = piano.keys[piano.keysarray[i]];
@@ -1046,6 +1059,11 @@ Rect.prototype.contains = function(x, y) {
 		});
 
 		this.audio2 = new audio_engine().init(function() {
+			if (!piano.audio2 || !piano.audio2.context) {
+				console.error("Audio2 initialization failed");
+				return;
+			}
+			
 			for (var i = Math.floor(piano.keysarray.length / 2); i < piano.keysarray.length; i++) {
 				(function() {
 					var key = piano.keys[piano.keysarray[i]];
@@ -1102,6 +1120,9 @@ Rect.prototype.contains = function(x, y) {
 	
 
 	function press(id, vol) {
+		// Make sure gClient exists and is initialized
+		if(!gClient) return;
+		
 		if(!gClient.preventsPlaying() && gNoteQuota.spend(1)) {
 			gHeldNotes[id] = true;
 			gSustainedNotes[id] = true;
