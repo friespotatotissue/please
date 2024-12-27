@@ -5,23 +5,22 @@ const http = require('http').Server(app);
 const io = require('socket.io')(http, {
     cors: {
         origin: "*",
-        methods: ["GET", "POST"],
+        methods: ["GET", "POST", "OPTIONS"],
         credentials: true,
-        allowedHeaders: ["*"]
+        allowedHeaders: ["Content-Type", "Authorization"]
     },
     allowEIO3: true,
-    transports: ['websocket', 'polling'],
-    pingTimeout: 120000,
-    pingInterval: 10000,
-    connectTimeout: 60000,
+    transports: ['polling', 'websocket'],
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    connectTimeout: 45000,
     maxHttpBufferSize: 1e8,
     allowUpgrades: true,
-    perMessageDeflate: true,
-    httpCompression: true,
-    upgradeTimeout: 30000,
-    destroyUpgrade: false,
+    perMessageDeflate: false,
+    httpCompression: false,
     path: '/socket.io/',
-    serveClient: true
+    serveClient: true,
+    cookie: false
 });
 
 // Import original server structures
@@ -35,10 +34,15 @@ const WebSocket = require('ws');
 // Enable CORS for all routes with specific options
 app.use(cors({
     origin: '*',
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
+    credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204
 }));
+
+// Add OPTIONS handler for preflight requests
+app.options('*', cors());
 
 // Add health check endpoint
 app.get('/health', (req, res) => {

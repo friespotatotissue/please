@@ -78,21 +78,20 @@ Client.prototype.connect = function() {
 	
 	try {
 		const socketOptions = {
-			transports: ['websocket', 'polling'],
+			transports: ['polling', 'websocket'],
 			reconnection: true,
 			reconnectionDelay: 1000,
 			reconnectionDelayMax: 5000,
 			reconnectionAttempts: Infinity,
+			timeout: 45000,
 			forceNew: true,
 			path: '/socket.io/',
-			timeout: 60000,
 			pingTimeout: 60000,
 			pingInterval: 25000,
 			autoConnect: true,
-			rejectUnauthorized: false,
-			withCredentials: true,
+			withCredentials: false,
 			extraHeaders: {
-				"Access-Control-Allow-Origin": "*"
+				"Content-Type": "application/json"
 			}
 		};
 
@@ -105,11 +104,6 @@ Client.prototype.connect = function() {
 		
 		this.socket.on("connect_error", (error) => {
 			console.error("Connection error:", error);
-			// Try websocket first, then polling
-			if (this.socket.io.opts.transports.indexOf('websocket') !== -1) {
-				console.log("Falling back to polling...");
-				this.socket.io.opts.transports = ['polling', 'websocket'];
-			}
 			self.emit("status", "Connection Error: " + error.message);
 		});
 
@@ -126,26 +120,11 @@ Client.prototype.connect = function() {
 			self.pingInterval = setInterval(function() {
 				if (self.isConnected()) {
 					self.socket.emit('ping');
-					self.sendArray([{m: "t", e: Date.now()}]);
 				}
-			}, 10000);
+			}, 20000);
 			
-			self.noteBuffer = [];
-			self.noteBufferTime = 0;
-			self.noteFlushInterval = setInterval(function() {
-				if(self.noteBufferTime && self.noteBuffer.length > 0) {
-					self.sendArray([{m: "n", t: self.noteBufferTime + self.serverTimeOffset, n: self.noteBuffer}]);
-					self.noteBufferTime = 0;
-					self.noteBuffer = [];
-				}
-			}, 200);
-
 			self.emit("connect");
-			self.emit("status", "Joining channel...");
-			
-			if(self.desiredChannelId) {
-				self.setChannel(self.desiredChannelId, self.desiredChannelSettings);
-			}
+			self.emit("status", "Connected");
 		});
 
 		this.socket.on("disconnect", function(reason) {
@@ -161,13 +140,15 @@ Client.prototype.connect = function() {
 			self.emit("disconnect");
 			self.emit("status", "Disconnected");
 
-			if (self.canConnect) {
-				setTimeout(() => {
-					if (!self.isConnected() && self.canConnect) {
-						console.log("Attempting to reconnect...");
-						self.connect();
-					}
-				}, 2000);
+			if (reason === 'io server disconnect' || reason === 'transport close') {
+				if (self.canConnect) {
+					setTimeout(() => {
+						if (!self.isConnected() && self.canConnect) {
+							console.log("Attempting to reconnect...");
+							self.connect();
+						}
+					}, 2000);
+				}
 			}
 		});
 
