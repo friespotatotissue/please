@@ -3,12 +3,12 @@
 
 $(function() {
 
-	if (window.location.pathname.replace('/piano', '') == '') {
-		window.location = window.location.href = "/piano/lobby";
+	if (window.location.pathname === '/piano' || window.location.pathname === '/piano/') {
+		window.location.href = "/piano/lobby";
 		return;
 	} else if (window.location.pathname.replace('/piano/', '') == '') {
-		window.location = window.location.href = "lobby";
-		return;
+			window.location = window.location.href = "lobby";
+			return;
 	}
 
 	var test_mode = (window.location.hash && window.location.hash.match(/^(?:#.+)*#test(?:#.+)*$/i));
