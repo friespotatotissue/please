@@ -234,18 +234,29 @@ class Server extends WebSocket.Server {
         p.updateUser(sanitizedName, data.set.color);
       }
 
+      // Only update the room participant for the current socket
       const r = this.getRoom(p.room);
       if (r) {
         const pR = r.findParticipant(p._id);
         if (pR) {
           pR.updateUser(p.name, p.color);
+          // Only broadcast to others, not to self
           this.broadcastTo({
             m: 'p',
             color: p.color,
             id: pR.id,
             name: p.name,
             _id: p._id
-          }, r.ppl.map(tpR => tpR._id));
+          }, r.ppl.map(tpR => tpR._id).filter(id => id !== p._id));
+
+          // Send confirmation to the current socket
+          s.sendObject({
+            m: 'p',
+            color: p.color,
+            id: pR.id,
+            name: p.name,
+            _id: p._id
+          });
         }
       }
     }
@@ -282,6 +293,17 @@ class Server extends WebSocket.Server {
   }
   getRoom(id) {
     return this.rooms.get(id);
+  }
+  // Add method to clean up disconnected participants
+  cleanupParticipants() {
+    this.rooms.forEach(room => {
+      const activePpl = room.ppl.filter(p => {
+        const participant = this.participants.get(p._id);
+        return participant && participant.isConnected;
+      });
+      room.ppl = activePpl;
+      room.count = activePpl.length;
+    });
   }
 }
 

@@ -16,6 +16,7 @@ class Participant {
     this.room = null;
     this.updates = false;
     this.lastSeen = Date.now();
+    this.isConnected = true;  // Track connection state
 
     // Ensure database directory exists
     const dbDir = path.join(process.cwd(), 'database');

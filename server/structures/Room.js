@@ -12,12 +12,13 @@ class Room {
     this.server = server;
     this._id = _id;
     this.count = count || 0;
+    const isLobby = _id.toLowerCase().includes('lobby');
     this.settings = {
       chat: true,
-      color: '#ecfaed',
+      color: bgColor,
       visible: true,
       crownsolo: false,
-      lobby: _id.toLowerCase().includes('lobby'),
+      lobby: isLobby,
       ...set
     };
     this.ppl = [];
