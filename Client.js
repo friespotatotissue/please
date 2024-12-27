@@ -76,51 +76,25 @@ Client.prototype.connect = function() {
 		"isConnected:", this.isConnected(), 
 		"isConnecting:", this.isConnecting());
 	
-	const connectionTimeout = setTimeout(() => {
-		if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
-			console.error("WebSocket connection timeout");
-			this.emit("status", "Connection Timeout");
-			if (this.ws) this.ws.close();
-		}
-	}, 15000); // Increased timeout to 15 seconds
-	
 	try {
-		const wsOptions = typeof module !== "undefined" ? {
-			"origin": "https://multiplayerpiano.com",
-			"rejectUnauthorized": false, // Use cautiously, only for debugging
-			"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-		} : undefined;
-
-		this.ws = new WebSocket('wss://please-production.up.railway.app/', wsOptions);
-		
-		// Enhanced error logging
-		this.ws.onerror = (error) => {
-			console.error("Detailed WebSocket Error:", {
-				type: error.type,
-				message: error.message,
-				target: error.target,
-				readyState: this.ws ? this.ws.readyState : 'undefined'
+		if(typeof module !== "undefined") {
+			// nodejsicle
+			this.ws = new WebSocket('ws://localhost:8080', {
+				"origin": "http://www.multiplayerpiano.com",
+				"user-agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36"
 			});
-			this.emit("status", "Detailed WebSocket Error: " + JSON.stringify(error));
-		};
+		} else {
+			// browseroni
+			this.ws = new WebSocket('ws://localhost:8080');
+		}
 	} catch (err) {
-		clearTimeout(connectionTimeout);
-		console.error("WebSocket Initialization Error:", {
-			name: err.name,
-			message: err.message,
-			stack: err.stack
-		});
-		this.emit("status", "Connection Initialization Error: " + err.message);
+		console.error("WebSocket Connection Error:", err);
+		this.emit("status", "Connection Error: " + err.message);
 		return;
 	}
 	var self = this;
 	this.ws.addEventListener("close", function(evt) {
-		clearTimeout(connectionTimeout);
-		console.log("WebSocket Connection Closed Details:", {
-			wasClean: evt.wasClean,
-			code: evt.code,
-			reason: evt.reason
-		});
+		console.log("WebSocket Connection Closed:", evt);
 		self.user = undefined;
 		self.participantId = undefined;
 		self.channel = undefined;
@@ -131,14 +105,14 @@ Client.prototype.connect = function() {
 		self.emit("disconnect");
 		self.emit("status", "Offline mode");
 
-		// More aggressive reconnection strategy
+		// reconnect!
 		if(self.connectionTime) {
 			self.connectionTime = undefined;
 			self.connectionAttempts = 0;
 		} else {
 			++self.connectionAttempts;
 		}
-		var ms_lut = [50, 2950, 7000, 10000, 15000, 30000]; // Added more delay options
+		var ms_lut = [50, 2950, 7000, 10000];
 		var idx = self.connectionAttempts;
 		if(idx >= ms_lut.length) idx = ms_lut.length - 1;
 		var ms = ms_lut[idx];
