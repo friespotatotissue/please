@@ -76,77 +76,88 @@ Client.prototype.connect = function() {
 		"isConnected:", this.isConnected(), 
 		"isConnecting:", this.isConnecting());
 	
-	// Fallback URLs in case the primary URL fails
-	var fallbackUrls = [
-		'wss://please-production.up.railway.app/',
-		'ws://please-production.up.railway.app/',
-		'wss://multiplayer-piano.herokuapp.com/',  // Example fallback
-		'ws://multiplayer-piano.herokuapp.com/'    // Example fallback
-	];
-	
-	var self = this;
-	
-	function attemptConnection(urls) {
-		if(urls.length === 0) {
-			console.error("All WebSocket connection attempts failed");
-			self.emit("status", "Connection Failed: No available servers");
-			return;
+	const connectionTimeout = setTimeout(() => {
+		if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+			console.error("WebSocket connection timeout");
+			this.emit("status", "Connection Timeout");
+			this.ws.close();
 		}
-		
-		var url = urls[0];
-		console.log("Attempting connection to:", url);
-		
-		try {
-			if(typeof module !== "undefined") {
-				// nodejsicle
-				self.ws = new WebSocket(url, {
-					"origin": "http://www.multiplayerpiano.com",
-					"user-agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36"
-				});
-			} else {
-				// browseroni
-				self.ws = new WebSocket(url);
-			}
-			
-			self.ws.addEventListener("open", function(evt) {
-				console.log("WebSocket Connection Opened:", evt);
-				self.connectionTime = Date.now();
-				self.sendArray([{m: "hi"}]);
-				self.pingInterval = setInterval(function() {
-					self.sendArray([{m: "t", e: Date.now()}]);
-				}, 20000);
-				self.noteBuffer = [];
-				self.noteBufferTime = 0;
-				self.noteFlushInterval = setInterval(function() {
-					if(self.noteBufferTime && self.noteBuffer.length > 0) {
-						self.sendArray([{m: "n", t: self.noteBufferTime + self.serverTimeOffset, n: self.noteBuffer}]);
-						self.noteBufferTime = 0;
-						self.noteBuffer = [];
-					}
-				}, 200);
+	}, 10000); // 10-second timeout
+	
+	try {
+		const wsOptions = typeof module !== "undefined" ? {
+			"origin": "http://www.multiplayerpiano.com",
+			"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+		} : undefined;
 
-				self.emit("connect");
-				self.emit("status", "Joining channel...");
-			});
-			
-			self.ws.addEventListener("error", function(err) {
-				console.error("WebSocket Error Event for", url, ":", err);
-				attemptConnection(urls.slice(1));
-			});
-			
-			self.ws.addEventListener("close", function(evt) {
-				console.log("WebSocket Connection Closed:", evt);
-				if(evt.code !== 1000) {  // Normal closure
-					attemptConnection(urls.slice(1));
-				}
-			});
-		} catch (err) {
-			console.error("WebSocket Connection Error:", err);
-			attemptConnection(urls.slice(1));
-		}
+		this.ws = new WebSocket('wss://please-production.up.railway.app/', wsOptions);
+	} catch (err) {
+		clearTimeout(connectionTimeout);
+		console.error("WebSocket Connection Error:", err);
+		this.emit("status", "Connection Error: " + err.message);
+		return;
 	}
-	
-	attemptConnection(fallbackUrls);
+	var self = this;
+	this.ws.addEventListener("close", function(evt) {
+		clearTimeout(connectionTimeout);
+		console.log("WebSocket Connection Closed:", evt);
+		self.user = undefined;
+		self.participantId = undefined;
+		self.channel = undefined;
+		self.setParticipants([]);
+		clearInterval(self.pingInterval);
+		clearInterval(self.noteFlushInterval);
+
+		self.emit("disconnect");
+		self.emit("status", "Offline mode");
+
+		// reconnect!
+		if(self.connectionTime) {
+			self.connectionTime = undefined;
+			self.connectionAttempts = 0;
+		} else {
+			++self.connectionAttempts;
+		}
+		var ms_lut = [50, 2950, 7000, 10000];
+		var idx = self.connectionAttempts;
+		if(idx >= ms_lut.length) idx = ms_lut.length - 1;
+		var ms = ms_lut[idx];
+		console.log("Reconnection attempt in", ms, "ms. Attempt number:", self.connectionAttempts);
+		setTimeout(self.connect.bind(self), ms);
+	});
+	this.ws.addEventListener("error", function(err) {
+		console.error("WebSocket Error Event:", err);
+		self.emit("status", "WebSocket Error");
+		self.ws.close(); // self.ws.emit("close");
+	});
+	this.ws.addEventListener("open", function(evt) {
+		console.log("WebSocket Connection Opened:", evt);
+		self.connectionTime = Date.now();
+		self.sendArray([{m: "hi"}]);
+		self.pingInterval = setInterval(function() {
+			self.sendArray([{m: "t", e: Date.now()}]);
+		}, 20000);
+		self.noteBuffer = [];
+		self.noteBufferTime = 0;
+		self.noteFlushInterval = setInterval(function() {
+			if(self.noteBufferTime && self.noteBuffer.length > 0) {
+				self.sendArray([{m: "n", t: self.noteBufferTime + self.serverTimeOffset, n: self.noteBuffer}]);
+				self.noteBufferTime = 0;
+				self.noteBuffer = [];
+			}
+		}, 200);
+
+		self.emit("connect");
+		self.emit("status", "Joining channel...");
+	});
+	this.ws.addEventListener("message", function(evt) {
+		var transmission = JSON.parse(evt.data);
+		// console.log(transmission);
+		for(var i = 0; i < transmission.length; i++) {
+			var msg = transmission[i];
+			self.emit(msg.m, msg);
+		}
+	});
 };
 
 Client.prototype.bindEventListeners = function() {
