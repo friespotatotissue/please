@@ -47,7 +47,7 @@ io.on('connection', (socket) => {
                 messages.forEach(msg => {
                     switch(msg.m) {
                         case "hi":
-                            // Send initial hi response
+                            // Send initial hi response without any redirects
                             socket.emit('message', JSON.stringify([{
                                 m: "hi",
                                 u: { _id: socket.id, name: "Anonymous" },

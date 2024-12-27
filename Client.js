@@ -85,8 +85,7 @@ Client.prototype.connect = function() {
 			reconnectionAttempts: Infinity,
 			forceNew: true,
 			path: '/socket.io',
-			autoConnect: true,
-			withCredentials: true
+			autoConnect: true
 		};
 
 		const serverUrl = 'https://please.up.railway.app';
@@ -94,17 +93,22 @@ Client.prototype.connect = function() {
 
 		if(typeof module !== "undefined") {
 			// nodejsicle
-			this.socket = io(serverUrl, {
-				...socketOptions,
-				extraHeaders: {
-					"origin": "http://www.multiplayerpiano.com",
-					"user-agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36"
-				}
-			});
+			this.socket = io(serverUrl, socketOptions);
 		} else {
-			// browseroni
 			this.socket = io(serverUrl, socketOptions);
 		}
+		
+		var self = this;
+		self.socket.on("connect", function() {
+			self.connectionTime = Date.now();
+			self.connectionAttempts = 0;
+			self.connected = true;
+			self.emit("connect");
+			self.emit("status", "Joining channel...");
+			if(self.desiredChannelId) {
+				self.setChannel(self.desiredChannelId, self.desiredChannelSettings);
+			}
+		});
 
 		// Add connection event listeners
 		this.socket.on('connect_error', (error) => {
