@@ -1,12 +1,6 @@
 /* eslint-disable */
-// Initialize NoteQuota globally
-var gNoteQuota = new NoteQuota(function(points) {
-    // update UI
-    var quota = document.getElementById("quota");
-    if (quota) quota.style.width = (points / NoteQuota.MAX) * 100 + "%";
-});
-
 // 钢琴
+
 $(function() {
 
 	if (window.location.pathname === '/piano' || window.location.pathname === '/piano/') {
@@ -21,9 +15,7 @@ $(function() {
 
 	var gSeeOwnCursor = (window.location.hash && window.location.hash.match(/^(?:#.+)*#seeowncursor(?:#.+)*$/i));
 
-	var gMidiVolumeTest = (window.location.hash && window.location.hash.match(/^(?:#.+)*#midivolumetest(?:#.+)*$/i));
-
-	var gMidiOutTest;
+	var gMidiOutTest = (window.location.hash && window.location.hash.match(/^(?:#.+)*#midiout(?:#.+)*$/i)); // todo this is no longer needed
 
 	if (!Array.prototype.indexOf) {
 		Array.prototype.indexOf = function(elt /*, from*/) {
@@ -42,9 +34,11 @@ $(function() {
 		|| window.webkitRequestAnimationFrame || window.msRequestAnimationFrame
 		|| function (cb) { setTimeout(cb, 1000 / 30); };
 
-	var DEFAULT_VELOCITY = 0.5;
 
-	var TIMING_TARGET = 1000;
+
+
+
+
 
 	var gSoundPath = "/piano/audio/default/";
 	var gSoundExt = ".wav.mp3";
@@ -363,7 +357,6 @@ Rect.prototype.contains = function(x, y) {
 	AudioEngine.prototype.init = function(cb) {
 		this.volume = 0.6;
 		this.sounds = {};
-		this.paused = true;
 		return this;
 	};
 
@@ -380,14 +373,10 @@ Rect.prototype.contains = function(x, y) {
 		this.volume = vol;
 	};
 
-	AudioEngine.prototype.resume = function() {
-		this.paused = false;
-	};
-
 
 	AudioEngineWeb = function() {
 		this.threshold = 1000;
-		this.worker = new Worker("/workerTimer.js");
+		this.worker = new Worker("/piano/workerTimer.js");
 		var self = this;
 		this.worker.onmessage = function(event)
 			{
@@ -408,59 +397,32 @@ Rect.prototype.contains = function(x, y) {
 	AudioEngineWeb.prototype.init = function(cb) {
 		AudioEngine.prototype.init.call(this);
 
-		try {
-			// Create audio context only after user interaction
-			const initAudioContext = () => {
-				if (!this.context) {
-					this.context = new (window.AudioContext || window.webkitAudioContext)({latencyHint: 'interactive'});
-					
-					// Create and connect nodes
-					this.masterGain = this.context.createGain();
-					this.masterGain.connect(this.context.destination);
-					this.masterGain.gain.value = this.volume || 0.6; // Use default volume if not set
+		this.context = new AudioContext();
 
-					this.limiterNode = this.context.createDynamicsCompressor();
-					this.limiterNode.threshold.value = -10;
-					this.limiterNode.knee.value = 0;
-					this.limiterNode.ratio.value = 20;
-					this.limiterNode.attack.value = 0;
-					this.limiterNode.release.value = 0.1;
-					this.limiterNode.connect(this.masterGain);
+		this.masterGain = this.context.createGain();
+		this.masterGain.connect(this.context.destination);
+		this.masterGain.gain.value = this.volume;
 
-					// for synth mix
-					this.pianoGain = this.context.createGain();
-					this.pianoGain.gain.value = 0.5;
-					this.pianoGain.connect(this.limiterNode);
-					this.synthGain = this.context.createGain();
-					this.synthGain.gain.value = 0.5;
-					this.synthGain.connect(this.limiterNode);
+		this.limiterNode = this.context.createDynamicsCompressor();
+		this.limiterNode.threshold.value = -10;
+		this.limiterNode.knee.value = 0;
+		this.limiterNode.ratio.value = 20;
+		this.limiterNode.attack.value = 0;
+		this.limiterNode.release.value = 0.1;
+		this.limiterNode.connect(this.masterGain);
 
-					this.playings = {};
-					
-					if(cb) setTimeout(cb, 0);
-				} else if (this.context.state === 'suspended') {
-					this.context.resume();
-				}
-			};
+		// for synth mix
+		this.pianoGain = this.context.createGain();
+		this.pianoGain.gain.value = 0.5;
+		this.pianoGain.connect(this.limiterNode);
+		this.synthGain = this.context.createGain();
+		this.synthGain.gain.value = 0.5;
+		this.synthGain.connect(this.limiterNode);
 
-			// Initialize audio on first user interaction
-			const userInteractionEvents = ['mousedown', 'keydown', 'touchstart'];
-			const initializeOnInteraction = () => {
-				initAudioContext();
-				userInteractionEvents.forEach(event => {
-					document.removeEventListener(event, initializeOnInteraction);
-				});
-			};
-			userInteractionEvents.forEach(event => {
-				document.addEventListener(event, initializeOnInteraction);
-			});
-
-			return this;
-		} catch (e) {
-			console.error("Failed to initialize AudioContext:", e);
-			if(cb) setTimeout(cb, 0);
-			return this;
-		}
+		this.playings = {};
+		
+		if(cb) setTimeout(cb, 0);
+		return this;
 	};
 
 	AudioEngineWeb.prototype.load = function(id, url, cb) {
@@ -476,6 +438,12 @@ Rect.prototype.contains = function(x, y) {
 					if(cb) cb();
 				});
 			} catch(e) {
+				/*throw new Error(e.message
+					+ " / id: " + id
+					+ " / url: " + url
+					+ " / status: " + req.status
+					+ " / ArrayBuffer: " + (req.response instanceof ArrayBuffer)
+					+ " / byteLength: " + (req.response && req.response.byteLength ? req.response.byteLength : "undefined"));*/
 				new Notification({id: "audio-download-error", title: "Problem", text: "For some reason, an audio download failed with a status of " + req.status + ". ",
 					target: "#piano", duration: 10000});
 			}
@@ -483,8 +451,7 @@ Rect.prototype.contains = function(x, y) {
 		req.send();
 	};
 
-	AudioEngineWeb.prototype.actualPlay = function(id, vol, time, part_id) {
-		if(this.paused) return;
+	AudioEngineWeb.prototype.actualPlay = function(id, vol, time, part_id) { //the old play(), but with time insted of delay_ms.
 		if(!this.sounds.hasOwnProperty(id)) return;
 		var source = this.context.createBufferSource();
 		source.buffer = this.sounds[id];
@@ -493,6 +460,7 @@ Rect.prototype.contains = function(x, y) {
 		source.connect(gain);
 		gain.connect(this.pianoGain);
 		source.start(time);
+		// Patch from ste-art remedies stuttering under heavy load
 		if(this.playings[id]) {
 			var playing = this.playings[id];
 			playing.gain.gain.setValueAtTime(playing.gain.gain.value, time);
@@ -548,14 +516,7 @@ Rect.prototype.contains = function(x, y) {
 
 	AudioEngineWeb.prototype.setVolume = function(vol) {
 		AudioEngine.prototype.setVolume.call(this, vol);
-		if (this.context && this.masterGain) {
-			this.masterGain.gain.value = this.volume;
-		}
-	};
-
-	AudioEngineWeb.prototype.resume = function() {
-		this.paused = false;
-		this.context.resume();
+		this.masterGain.gain.value = this.volume;
 	};
 
 
@@ -1041,11 +1002,6 @@ Rect.prototype.contains = function(x, y) {
 		var audio_engine = AudioEngineWeb;
 
 		this.audio = new audio_engine().init(function() {
-			if (!piano.audio || !piano.audio.context) {
-				console.error("Audio initialization failed");
-				return;
-			}
-			
 			for (var i = 0; i < Math.floor(piano.keysarray.length / 2); i++) {
 				(function() {
 					var key = piano.keys[piano.keysarray[i]];
@@ -1061,11 +1017,6 @@ Rect.prototype.contains = function(x, y) {
 		});
 
 		this.audio2 = new audio_engine().init(function() {
-			if (!piano.audio2 || !piano.audio2.context) {
-				console.error("Audio2 initialization failed");
-				return;
-			}
-			
 			for (var i = Math.floor(piano.keysarray.length / 2); i < piano.keysarray.length; i++) {
 				(function() {
 					var key = piano.keys[piano.keysarray[i]];
@@ -1080,30 +1031,39 @@ Rect.prototype.contains = function(x, y) {
 		});
 	};
 
-	Piano.prototype.play = function(note, vol, participant, delay_ms, lyric) {
-		if(!this.keys.hasOwnProperty(note) || !participant) return;
+	Piano.prototype.play = function(note, vol, participant, delay_ms) {
+		if(!this.keys.hasOwnProperty(note)) return;
 		var key = this.keys[note];
-		if(key.loaded) this.audio.play(key.note, vol, delay_ms, participant.id);
-		if(gMidiOutTest) gMidiOutTest(key.note, vol * 100, delay_ms);
-		var self = this;
-		setTimeout(function() {
-			self.renderer.visualize(key, participant.color);
-			if(lyric) {
-				// Handle lyrics if needed
+		if(key.loaded) {
+			// Only use audio2 for higher notes
+			if (parseInt(key.note.match(/\d+/)[0]) >= 4) {
+				this.audio2.play(key.note, vol, delay_ms, participant.id);
+			} else {
+				this.audio.play(key.note, vol, delay_ms, participant.id);
 			}
-			var jq_namediv = $(participant.nameDiv);
-			jq_namediv.addClass("play");
+		}
+		if(typeof gMidiOutTest === "function") gMidiOutTest(key.note, vol * 100, delay_ms);
+		var self = this;
+		var jq_namediv = $(typeof participant == "undefined" ? null : participant.nameDiv);
+		if(jq_namediv) {
 			setTimeout(function() {
-				jq_namediv.removeClass("play");
-			}, 30);
-		}, delay_ms || 0);
+				self.renderer.visualize(key, typeof participant == "undefined" ? "yellow" : (participant.color || "#777"));
+				jq_namediv.addClass("play");
+				setTimeout(function() {
+					jq_namediv.removeClass("play");
+				}, 30);
+			}, delay_ms);
+		}
 	};
 
 	Piano.prototype.stop = function(note, participant, delay_ms) {
 		if(!this.keys.hasOwnProperty(note)) return;
 		var key = this.keys[note];
-		if(key.loaded) this.audio.stop(key.note, delay_ms, participant.id);
-		if(gMidiOutTest) gMidiOutTest(key.note, 0, delay_ms);
+		if(key.loaded) {
+			if (this.section1.includes(key.note)) this.audio2.stop(key.note, delay_ms, participant.id);
+			else this.audio.stop(key.note, delay_ms, participant.id);
+		}
+		if(typeof gMidiOutTest === "function") gMidiOutTest(key.note, 0, delay_ms);
 	};
 	
 	var gPiano = new Piano(document.getElementById("piano"));
@@ -1122,9 +1082,6 @@ Rect.prototype.contains = function(x, y) {
 	
 
 	function press(id, vol) {
-		// Make sure gClient exists and is initialized
-		if(!gClient) return;
-		
 		if(!gClient.preventsPlaying() && gNoteQuota.spend(1)) {
 			gHeldNotes[id] = true;
 			gSustainedNotes[id] = true;
@@ -1582,18 +1539,11 @@ Rect.prototype.contains = function(x, y) {
 
 
 	var volume_slider = new VolumeSlider(document.getElementById("volume"), function(v) {
-		if (gPiano && gPiano.audio) {
-			gPiano.audio.setVolume(v);
-		}
-		if (gPiano && gPiano.audio2) {
-			gPiano.audio2.setVolume(v);
-		}
+		gPiano.audio.setVolume(v);
+		gPiano.audio2.setVolume(v);
 		if(window.localStorage) localStorage.volume = v;
 	});
-
-	// Set initial volume from localStorage or default
-	var initial_volume = (window.localStorage && localStorage.volume) ? parseFloat(localStorage.volume) : 0.6;
-	volume_slider.set(initial_volume);
+	volume_slider.set(gPiano.audio.volume);
 
 	var Note = function(note, octave) {
 		this.note = note;
@@ -1641,10 +1591,8 @@ Rect.prototype.contains = function(x, y) {
 		79: n("b", 2),
 		80: n("c", 3),
 		189: n("cs", 3),
-		173: n("cs", 3), // firefox why
 		219: n("d", 3),
 		187: n("ds", 3),
-		61: n("ds", 3), // firefox why
 		221: n("e", 3)
 	};
 
@@ -1653,6 +1601,7 @@ Rect.prototype.contains = function(x, y) {
 	var transpose_octave = 0;
 	
 	function handleKeyDown(evt) {
+		//console.log(evt);
 		var code = parseInt(evt.keyCode);
 		if(key_binding[code] !== undefined) {
 			var binding = key_binding[code];
@@ -1694,7 +1643,7 @@ Rect.prototype.contains = function(x, y) {
 			gAutoSustain = !gAutoSustain;
 			evt.preventDefault();
 		}
-	}
+	};
 
 	function handleKeyUp(evt) {
 		var code = parseInt(evt.keyCode);
@@ -1721,7 +1670,7 @@ Rect.prototype.contains = function(x, y) {
 			releaseSustain();
 			evt.preventDefault();
 		}
-	}
+	};
 
 	function handleKeyPress(evt) {
 		evt.preventDefault();
@@ -1730,7 +1679,7 @@ Rect.prototype.contains = function(x, y) {
 			//$("#chat input").focus();
 		}
 		return false;
-	}
+	};
 
 	var recapListener = function(evt) {
 		captureKeyboard();
@@ -1739,18 +1688,18 @@ Rect.prototype.contains = function(x, y) {
 	function captureKeyboard() {
 		$("#piano").off("mousedown", recapListener);
 		$("#piano").off("touchstart", recapListener);
-		$(document).on("keydown", handleKeyDown);
+		$(document).on("keydown", handleKeyDown );
 		$(document).on("keyup", handleKeyUp);
-		$(window).on("keypress", handleKeyPress);
-	}
+		$(window).on("keypress", handleKeyPress );
+	};
 
 	function releaseKeyboard() {
-		$(document).off("keydown", handleKeyDown);
+		$(document).off("keydown", handleKeyDown );
 		$(document).off("keyup", handleKeyUp);
-		$(window).off("keypress", handleKeyPress);
+		$(window).off("keypress", handleKeyPress );
 		$("#piano").on("mousedown", recapListener);
 		$("#piano").on("touchstart", recapListener);
-	}
+	};
 
 	captureKeyboard();
 
@@ -1946,7 +1895,6 @@ Rect.prototype.contains = function(x, y) {
 ////////////////////////////////////////////////////////////////
 
 	var Notification = function(par) {
-		if(this instanceof Notification === false) throw("yeet");
 		EventEmitter.call(this);
 
 		var par = par || {};
@@ -1965,7 +1913,7 @@ Rect.prototype.contains = function(x, y) {
 			eles.remove();
 		}
 		this.domElement = $('<div class="notification"><div class="notification-body"><div class="title"></div>' +
-			'<div class="text"></div></div><div class="x">Ⓧ</div></div>');
+			'<div class="text"></div></div><div class="x">x</div></div>');
 		this.domElement[0].id = this.id;
 		this.domElement.addClass(this["class"]);
 		this.domElement.find(".title").text(this.title);
@@ -2014,7 +1962,7 @@ Rect.prototype.contains = function(x, y) {
 
 	Notification.prototype.close = function() {
 		var self = this;
-		window.removeEventListener("resize", this.onresize);
+		window.removeEventListener("resize",  this.onresize);
 		this.domElement.fadeOut(500, function() {
 			self.domElement.remove();
 			self.emit("close");
@@ -2900,6 +2848,7 @@ Rect.prototype.contains = function(x, y) {
 	}
 
 	synthVoice.prototype.stop = function(time) {
+		//this.gain.gain.setValueAtTime(osc1_sustain, time);
 		this.gain.gain.linearRampToValueAtTime(0, time + osc1_release);
 		this.osc.stop(time + osc1_release);
 	};
@@ -2917,6 +2866,7 @@ Rect.prototype.contains = function(x, y) {
 		});
 
 		function showSynth() {
+
 			var html = document.createElement("div");
 
 			// on/off button
@@ -2943,39 +2893,34 @@ Rect.prototype.contains = function(x, y) {
 
 			// mix
 			var knob = document.createElement("canvas");
-			mixin(knob, {width: 32 * window.devicePixelRatio, height: 32 * window.devicePixelRatio, className: "knob"});
+			mixin(knob, {width: 32, height: 32, className: "knob"});
 			html.appendChild(knob);
 			knob = new Knob(knob, 0, 100, 0.1, 50, "mix", "%");
-			knob.canvas.style.width = "32px";
-			knob.canvas.style.height = "32px";
 			knob.on("change", function(k) {
 				var mix = k.value / 100;
 				audio.pianoGain.gain.value = 1 - mix;
-				
 				audio.synthGain.gain.value = mix;
 			});
 			knob.emit("change", knob);
 
 			// osc1 type
 			(function() {
+				osc1_type = osc_types[osc_type_index];
+				var button = document.createElement("input");
+				mixin(button, {type: "button", value: osc_types[osc_type_index]});
+				button.addEventListener("click", function(evt) {
+					if(++osc_type_index >= osc_types.length) osc_type_index = 0;
 					osc1_type = osc_types[osc_type_index];
-					var button = document.createElement("input");
-					mixin(button, {type: "button", value: osc_types[osc_type_index]});
-					button.addEventListener("click", function(evt) {
-						if(++osc_type_index >= osc_types.length) osc_type_index = 0;
-						osc1_type = osc_types[osc_type_index];
-						button.value = osc1_type;
-					});
-					html.appendChild(button);
-				})();
+					button.value = osc1_type;
+				});
+				html.appendChild(button);
+			})();
 
 			// osc1 attack
 			var knob = document.createElement("canvas");
-			mixin(knob, {width: 32 * window.devicePixelRatio, height: 32 * window.devicePixelRatio, className: "knob"});
+			mixin(knob, {width: 32, height: 32, className: "knob"});
 			html.appendChild(knob);
 			knob = new Knob(knob, 0, 1, 0.001, osc1_attack, "osc1 attack", "s");
-			knob.canvas.style.width = "32px";
-			knob.canvas.style.height = "32px";
 			knob.on("change", function(k) {
 				osc1_attack = k.value;
 			});
@@ -2983,22 +2928,18 @@ Rect.prototype.contains = function(x, y) {
 
 			// osc1 decay
 			var knob = document.createElement("canvas");
-			mixin(knob, {width: 32 * window.devicePixelRatio, height: 32 * window.devicePixelRatio, className: "knob"});
+			mixin(knob, {width: 32, height: 32, className: "knob"});
 			html.appendChild(knob);
 			knob = new Knob(knob, 0, 2, 0.001, osc1_decay, "osc1 decay", "s");
-			knob.canvas.style.width = "32px";
-			knob.canvas.style.height = "32px";
 			knob.on("change", function(k) {
 				osc1_decay = k.value;
 			});
 			knob.emit("change", knob);
 
 			var knob = document.createElement("canvas");
-			mixin(knob, {width: 32 * window.devicePixelRatio, height: 32 * window.devicePixelRatio, className: "knob"});
+			mixin(knob, {width: 32, height: 32, className: "knob"});
 			html.appendChild(knob);
 			knob = new Knob(knob, 0, 1, 0.001, osc1_sustain, "osc1 sustain", "x");
-			knob.canvas.style.width = "32px";
-			knob.canvas.style.height = "32px";
 			knob.on("change", function(k) {
 				osc1_sustain = k.value;
 			});
@@ -3006,19 +2947,21 @@ Rect.prototype.contains = function(x, y) {
 
 			// osc1 release
 			var knob = document.createElement("canvas");
-			mixin(knob, {width: 32 * window.devicePixelRatio, height: 32 * window.devicePixelRatio, className: "knob"});
+			mixin(knob, {width: 32, height: 32, className: "knob"});
 			html.appendChild(knob);
 			knob = new Knob(knob, 0, 2, 0.001, osc1_release, "osc1 release", "s");
-			knob.canvas.style.width = "32px";
-			knob.canvas.style.height = "32px";
 			knob.on("change", function(k) {
 				osc1_release = k.value;
 			});
 			knob.emit("change", knob);
 
+
+
 			var div = document.createElement("div");
 			div.innerHTML = "<br><br><br><br><center>this space intentionally left blank</center><br><br><br><br>";
 			html.appendChild(div);
+
+			
 
 			// notification
 			notification = new Notification({title: "Synthesize", html: html, duration: -1, target: "#synth-btn"});

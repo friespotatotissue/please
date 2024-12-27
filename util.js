@@ -1,3 +1,4 @@
+
 function mixin(obj1, obj2) {
 	for(var i in obj2) {
 		if(obj2.hasOwnProperty(i)) {
@@ -56,8 +57,8 @@ var Knob = function(canvas, min, max, step, value, name, unit) {
 	this.step = step || 0.01;
 	this.value = value || this.min;
 	this.knobValue = (this.value - this.min) / (this.max - this.min);
-	this.name = name || "";
-	this.unit = unit || "";
+	this.name = "" || name;
+	this.unit = "" || unit;
 
 	var ind = step.toString().indexOf(".");
 	if(ind == -1) ind = step.toString().length - 1;
@@ -224,7 +225,7 @@ Knob.prototype.contains = function(x, y) {
 Knob.prototype.translateMouseEvent = function(evt) {
 	var element = evt.target;
 	return {
-		x: (evt.clientX - element.getBoundingClientRect().left - element.clientLeft + element.scrollLeft),
-		y: evt.clientY - (element.getBoundingClientRect().top - element.clientTop + element.scrollTop)
+		x: evt.clientX - element.getBoundingClientRect().left - element.clientLeft + element.scrollLeft,
+		y: evt.clientY - element.getBoundingClientRect().top - element.clientTop + element.scrollTop
 	}
 };

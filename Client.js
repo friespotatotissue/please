@@ -1,7 +1,7 @@
 /* eslint-disable */
 if(typeof module !== "undefined") {
 	module.exports = Client;
-	WebSocket = require("ws");
+	io = require("socket.io-client");
 	EventEmitter = require("events").EventEmitter;
 } else {
 	this.Client = Client;
@@ -19,8 +19,8 @@ function mixin(obj1, obj2) {
 
 function Client(uri) {
 	EventEmitter.call(this);
-	this.uri = uri.replace('ws://', window.location.protocol === 'https:' ? 'wss://' : 'ws://');
-	this.ws = undefined;
+	this.uri = uri;
+	this.socket = undefined;
 	this.serverTimeOffset = 0;
 	this.user = undefined;
 	this.participantId = undefined;
@@ -35,7 +35,6 @@ function Client(uri) {
 	this.noteBuffer = [];
 	this.noteBufferTime = 0;
 	this.noteFlushInterval = undefined;
-	this['🐈'] = 0;
 
 	this.bindEventListeners();
 
@@ -47,15 +46,15 @@ mixin(Client.prototype, EventEmitter.prototype);
 Client.prototype.constructor = Client;
 
 Client.prototype.isSupported = function() {
-	return typeof WebSocket === "function";
+	return typeof io === "function";
 };
 
 Client.prototype.isConnected = function() {
-	return this.isSupported() && this.ws && this.ws.readyState === WebSocket.OPEN;
+	return this.isSupported() && this.socket && this.socket.connected;
 };
 
 Client.prototype.isConnecting = function() {
-	return this.isSupported() && this.ws && this.ws.readyState === WebSocket.CONNECTING;
+	return this.isSupported() && this.socket && this.socket.connecting;
 };
 
 Client.prototype.start = function() {
@@ -65,86 +64,112 @@ Client.prototype.start = function() {
 
 Client.prototype.stop = function() {
 	this.canConnect = false;
-	this.ws.close();
+	if (this.socket) this.socket.disconnect();
 };
 
-Client.prototype.connect = function(log) {
+Client.prototype.connect = function() {
 	if(!this.canConnect || !this.isSupported() || this.isConnected() || this.isConnecting())
 		return;
 	this.emit("status", "Connecting...");
-	console.log(`Connect to ${this.uri}`)
-	if(typeof module !== "undefined") {
-		// nodejsicle
-		this.ws = new WebSocket(this.uri, {
-			origin: "https://please.up.railway.app"
-		});
-		this.ws2 = new WebSocket(this.uri, {
-			origin: "wss://please.up.railway.app"
-		});
-	} else {
-		// browseroni
-		this.ws = new WebSocket(this.uri);
-	}
-	var self = this;
-	this.ws.addEventListener("close", function(evt) {
-		log && console.log(`close`, evt)
-		self.user = undefined;
-		self.participantId = undefined;
-		self.channel = undefined;
-		self.setParticipants([]);
-		clearInterval(self.pingInterval);
-		clearInterval(self.noteFlushInterval);
+	console.log("Attempting Socket.IO connection with canConnect:", this.canConnect, 
+		"isSupported:", this.isSupported(), 
+		"isConnected:", this.isConnected(), 
+		"isConnecting:", this.isConnecting());
+	
+	try {
+		const socketOptions = {
+			transports: ['websocket', 'polling'],
+			reconnection: true,
+			reconnectionDelay: 1000,
+			reconnectionDelayMax: 5000,
+			reconnectionAttempts: Infinity,
+			forceNew: true,
+			path: '/socket.io'
+		};
 
-		self.emit("disconnect", evt);
-		self.emit("status", "Offline mode");
+		const serverUrl = 'https://please.up.railway.app';
+		console.log('Connecting to server:', serverUrl);
 
-		// reconnect!
-		if(self.connectionTime) {
-			self.connectionTime = undefined;
+		this.socket = io(serverUrl, socketOptions);
+		
+		var self = this;
+		
+		this.socket.on("connect", function() {
+			console.log("Socket.IO Connection Opened");
+			self.connectionTime = Date.now();
 			self.connectionAttempts = 0;
-		} else {
-			++self.connectionAttempts;
-		}
-		var ms_lut = [50, 2950, 7000, 10000];
-		var idx = self.connectionAttempts;
-		if(idx >= ms_lut.length) idx = ms_lut.length - 1;
-		var ms = ms_lut[idx];
-		setTimeout(self.connect.bind(self), ms);
-	});
-	this.ws.addEventListener("error", function(err) {
-		log && console.log(`ws error`, err)
-		self.emit("wserror", err);
-		self.ws.close(); // self.ws.emit("close");
-	});
-	this.ws.addEventListener("open", function(evt) {
-		log && console.log(`ws open`)
-		self.connectionTime = Date.now();
-		self.sendArray([{"m": "hi", "x": 1, "y": 1, "🐈": self['🐈']++ || undefined }]);
-		self.pingInterval = setInterval(function() {
-			self.sendArray([{m: "t", e: Date.now()}]);
-		}, 20000);
-		//self.sendArray([{m: "t", e: Date.now()}]);
-		self.noteBuffer = [];
-		self.noteBufferTime = 0;
-		self.noteFlushInterval = setInterval(function() {
-			if(self.noteBufferTime && self.noteBuffer.length > 0) {
-				self.sendArray([{m: "n", t: self.noteBufferTime + self.serverTimeOffset, n: self.noteBuffer}]);
-				self.noteBufferTime = 0;
-				self.noteBuffer = [];
-			}
-		}, 200);
+			self.connected = true;
+			
+			self.sendArray([{m: "hi"}]);
+			
+			self.pingInterval = setInterval(function() {
+				self.sendArray([{m: "t", e: Date.now()}]);
+			}, 20000);
+			
+			self.noteBuffer = [];
+			self.noteBufferTime = 0;
+			self.noteFlushInterval = setInterval(function() {
+				if(self.noteBufferTime && self.noteBuffer.length > 0) {
+					self.sendArray([{m: "n", t: self.noteBufferTime + self.serverTimeOffset, n: self.noteBuffer}]);
+					self.noteBufferTime = 0;
+					self.noteBuffer = [];
+				}
+			}, 200);
 
-		self.emit("connect");
-		self.emit("status", "Joining channel...");
-	});
-	this.ws.addEventListener("message", function(evt) {
-		var transmission = JSON.parse(evt.data);
-		log && console.log(`message`, transmission)
-		for(var i = 0; i < transmission.length; i++) {
-			var msg = transmission[i];
-			self.emit(msg.m, msg);
-		}
-	});
+			self.emit("connect");
+			self.emit("status", "Joining channel...");
+			
+			if(self.desiredChannelId) {
+				self.setChannel(self.desiredChannelId, self.desiredChannelSettings);
+			}
+		});
+
+		this.socket.on("disconnect", function() {
+			console.log("Socket.IO Connection Closed");
+			self.user = undefined;
+			self.participantId = undefined;
+			self.channel = undefined;
+			self.setParticipants([]);
+			clearInterval(self.pingInterval);
+			clearInterval(self.noteFlushInterval);
+			self.connected = false;
+
+			self.emit("disconnect");
+			self.emit("status", "Offline mode");
+
+			if(self.connectionTime) {
+				self.connectionTime = undefined;
+				self.connectionAttempts = 0;
+			} else {
+				++self.connectionAttempts;
+			}
+		});
+
+		this.socket.on("error", function(err) {
+			console.error("Socket.IO Error:", err);
+			self.emit("status", "Socket.IO Error");
+		});
+
+		this.socket.on("connect_error", function(error) {
+			console.error("Connection error:", error);
+			self.emit("status", "Connection Error: " + error.message);
+		});
+
+		this.socket.on("message", function(data) {
+			try {
+				var transmission = JSON.parse(data);
+				for(var i = 0; i < transmission.length; i++) {
+					self.emit(transmission[i].m, transmission[i]);
+				}
+			} catch(err) {
+				console.error("Error parsing message:", err);
+			}
+		});
+
+	} catch(err) {
+		console.error("Socket.IO Connection Error:", err);
+		this.emit("status", "Connection Error: " + err.message);
+	}
 };
 
 Client.prototype.bindEventListeners = function() {
@@ -161,7 +186,6 @@ Client.prototype.bindEventListeners = function() {
 	});
 	this.on("ch", function(msg) {
 		self.desiredChannelId = msg.ch._id;
-		self.desiredChannelSettings = msg.ch.settings;
 		self.channel = msg.ch;
 		if(msg.p) self.participantId = msg.p;
 		self.setParticipants(msg.ppl);
@@ -181,11 +205,13 @@ Client.prototype.bindEventListeners = function() {
 };
 
 Client.prototype.send = function(raw) {
-	if(this.isConnected()) this.ws.send(raw);
+	if(this.isConnected()) this.socket.send(raw);
 };
 
 Client.prototype.sendArray = function(arr) {
-	this.send(JSON.stringify(arr));
+	if(this.isConnected()) {
+		this.socket.send(JSON.stringify(arr));
+	}
 };
 
 Client.prototype.setChannel = function(id, set) {
@@ -195,6 +221,10 @@ Client.prototype.setChannel = function(id, set) {
 };
 
 Client.prototype.offlineChannelSettings = {
+	lobby: true,
+	visible: false,
+	chat: false,
+	crownsolo: false,
 	color:"#ecfaed"
 };
 
@@ -203,18 +233,6 @@ Client.prototype.getChannelSetting = function(key) {
 		return this.offlineChannelSettings[key];
 	} 
 	return this.channel.settings[key];
-};
-
-Client.prototype.setChannelSettings = function(settings) {
-	if(!this.isConnected() || !this.channel || !this.channel.settings) {
-		return;
-	} 
-	if(this.desiredChannelSettings){
-		for(var key in settings) {
-			this.desiredChannelSettings[key] = settings[key];
-		}
-		this.sendArray([{m: "chset", set: this.desiredChannelSettings}]);
-	}
 };
 
 Client.prototype.offlineParticipant = {
