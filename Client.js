@@ -90,7 +90,7 @@ Client.prototype.connect = function() {
 			timeout: 20000
 		};
 
-		const serverUrl = 'http://localhost:3000';
+		const serverUrl = 'https://please.up.railway.app';
 		console.log('Connecting to server:', serverUrl);
 
 		if(typeof module !== "undefined") {
@@ -212,6 +212,10 @@ Client.prototype.bindEventListeners = function() {
 		self.receiveServerTime(msg.t, msg.e || undefined);
 	});
 	this.on("ch", function(msg) {
+		if (!msg.ch) {
+			console.error("Received invalid channel message:", msg);
+			return;
+		}
 		self.desiredChannelId = msg.ch._id;
 		self.channel = msg.ch;
 		if(msg.p) self.participantId = msg.p;
