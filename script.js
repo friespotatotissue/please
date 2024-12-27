@@ -1224,12 +1224,16 @@ Rect.prototype.contains = function(x, y) {
 
 	gClient.on("connect", function() {
 		reconnectionAttempts = 0;
-		reconnectionDelay = 2000; // Reset delay
+		reconnectionDelay = 2000;
 		isReconnecting = false;
 		console.log("Connected successfully");
 		
-		// Send client ID to server for validation
-		gClient.sendArray([{m: "hi", clientId: gClient.clientId}]);
+		// Send client ID and desired channel in hi message
+		gClient.sendArray([{
+			m: "hi",
+			clientId: gClient.clientId,
+			_id: gClient.desiredChannelId || channel_id
+		}]);
 		
 		// Set a timeout for joining channel
 		if (joinTimeout) clearTimeout(joinTimeout);
@@ -1237,29 +1241,69 @@ Rect.prototype.contains = function(x, y) {
 			console.log("Channel join timeout - attempting to rejoin");
 			if (gClient.desiredChannelId) {
 				gClient.setChannel(gClient.desiredChannelId);
+			} else {
+				gClient.setChannel(channel_id);
 			}
 		}, 5000);
 	});
 
 	// Handle successful channel join
 	gClient.on("ch", function(msg) {
+		if (!msg.ch) {
+			console.error("Received invalid channel message:", msg);
+			return;
+		}
+
 		if (joinTimeout) {
 			clearTimeout(joinTimeout);
 			joinTimeout = null;
 		}
 		
+		// Update channel state
+		gClient.channel = msg.ch;
+		gClient.participantId = msg.p || null;
+		
+		// Handle crown ownership
 		if (msg.ch.crown && msg.ch.crown.clientId === gClient.clientId && msg.ch.crown.userId === gClient.user._id) {
-			// This client is the true owner
-			msg.ch.crown.participantId = gClient.participantId;
-			// Show room settings button only for crown holder
-			document.getElementById("room-settings-btn").style.display = "block";
+				msg.ch.crown.participantId = gClient.participantId;
+				document.getElementById("room-settings-btn").style.display = "block";
 		} else {
-			// Hide room settings button for non-crown holders
 			document.getElementById("room-settings-btn").style.display = "none";
+		}
+		
+		// Update participants
+		if (msg.ppl) {
+			gClient.setParticipants(msg.ppl);
+		}
+		
+		// Update room info display
+		var info = $("#room > .info");
+		info.text(msg.ch._id);
+		if (msg.ch.settings.lobby) {
+			info.addClass("lobby");
+		} else {
+			info.removeClass("lobby");
 		}
 		
 		// Update status
 		gClient.emit("status", "Connected!");
+		console.log("Successfully joined channel:", msg.ch._id);
+	});
+
+	// Handle errors
+	gClient.on("error", function(err) {
+		console.error("Client error:", err);
+		new Notification({
+			id: "client-error",
+			title: "Connection Error",
+			text: "An error occurred. Please try refreshing the page.",
+			duration: 7000
+		});
+	});
+
+	// Handle notifications
+	gClient.on("notification", function(msg) {
+		new Notification(msg);
 	});
 
 	gClient.setChannel(channel_id);
