@@ -73,13 +73,13 @@ Client.prototype.connect = function() {
 	this.emit("status", "Connecting...");
 	if(typeof module !== "undefined") {
 		// nodejsicle
-		this.ws = new WebSocket('wss://please-production.up.railway.app/', {
+		this.ws = new WebSocket('ws://please-production.up.railway.app/', {
       "origin": "http://www.multiplayerpiano.com",
       "user-agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36"
 		});
 	} else {
 		// browseroni
-		this.ws = new WebSocket('wss://please-production.up.railway.app/');
+		this.ws = new WebSocket('ws://please-production.up.railway.app/');
 	}
 	var self = this;
 	this.ws.addEventListener("close", function(evt) {
