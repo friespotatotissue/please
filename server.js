@@ -45,7 +45,10 @@ io.on('connection', (socket) => {
             if (noop) noop();
         },
         emit: socket.emit.bind(socket),
-        on: socket.on.bind(socket)
+        on: socket.on.bind(socket),
+        terminate: () => {
+            socket.disconnect(true);
+        }
     };
 
     // Create a Socket wrapper instance

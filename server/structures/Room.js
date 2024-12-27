@@ -1,4 +1,6 @@
-const bgColor = '#206694';
+const bgColor = "#3b5054";
+const lobbyColor = "#73b3cc";
+const lobbyColor2 = "#273546";
 const Chat = require('./Chat.js');
 const ParticipantRoom = require('./ParticipantRoom.js');
 const sha1 = require('sha1');
@@ -16,7 +18,8 @@ class Room {
     if (isLobby) {
       this.settings = {
         chat: true,
-        color: bgColor,
+        color: lobbyColor,
+        color2: lobbyColor2,
         crownsolo: false,
         lobby: true,
         visible: true

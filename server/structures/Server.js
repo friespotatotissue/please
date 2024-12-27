@@ -73,14 +73,13 @@ class Server extends WebSocket.Server {
       let pR = r.findParticipant(p._id);
       if (!pR) pR = r.newParticipant(p);
       p.room = r._id;
-      if (!r.settings.lobby && pR) {
-        r.crown = {
-          participantId: pR.id,
-          userId: p.id,
-          time: new Date()
-        };
+      
+      // Set crown for room creator
+      if (!r.settings.lobby && r.crown && r.crown.userId === p._id && !r.crown.participantId) {
+        r.crown.participantId = pR.id;
         this.rooms.set(r._id, r);
       }
+      
       if (r._id.toLowerCase().includes('black')) {
         // Send offline note quota because fuck it
         s.sendObject({
@@ -234,6 +233,13 @@ class Server extends WebSocket.Server {
   // Rooms
   newRoom(data, p) {
     const room = new Room(p, this, data._id, 0, data.set);
+    if (!room.settings.lobby) {
+      room.crown = {
+        participantId: null,  // Will be set when creator joins
+        userId: p._id,
+        time: new Date()
+      };
+    }
     this.rooms.set(room._id, room);
     return room;
   }
