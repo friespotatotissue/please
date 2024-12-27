@@ -28,6 +28,7 @@ class Room {
       this.settings = {
         chat: settings.chat != null ? settings.chat : true,
         color: settings.color || bgColor,
+        color2: settings.color2,
         crownsolo: settings.crownsolo != null ? settings.crownsolo : false,
         lobby: false,
         visible: settings.visible != null ? settings.visible : true
@@ -75,6 +76,7 @@ class Room {
     this.settings = Object.assign(this.settings, {
       chat: settings.chat != null ? settings.chat : this.settings.chat,
       color: settings.color || this.settings.color,
+      color2: settings.color2,
       crownsolo: settings.crownsolo != null ? settings.crownsolo : this.settings.crownsolo,
       visible: settings.visible != null ? settings.visible : this.settings.visible
     });

@@ -9,7 +9,13 @@ const io = require('socket.io')(http, {
         credentials: true
     },
     transports: ['websocket', 'polling'],
-    allowEIO3: true
+    allowEIO3: true,
+    pingTimeout: 60000,
+    pingInterval: 25000,
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 5000
 });
 
 // Import original server structures
@@ -37,12 +43,16 @@ io.on('connection', (socket) => {
     const wsWrapper = {
         readyState: WebSocket.OPEN,
         send: (data, cb) => {
-            socket.send(data);
-            if (cb) cb();
+            if (socket.connected) {
+                socket.send(data);
+                if (cb) cb();
+            }
         },
         ping: (noop) => {
-            socket.emit('ping');
-            if (noop) noop();
+            if (socket.connected) {
+                socket.emit('ping');
+                if (noop) noop();
+            }
         },
         emit: socket.emit.bind(socket),
         on: socket.on.bind(socket),
@@ -64,21 +74,33 @@ io.on('connection', (socket) => {
     wsServer.sockets.add(socketWrapper);
 
     socket.on('message', (data) => {
-        socketWrapper.emit('message', data);
+        if (socket.connected) {
+            socketWrapper.emit('message', data);
+        }
     });
 
-    socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
+    socket.on('disconnect', (reason) => {
+        console.log('Client disconnected:', socket.id, 'Reason:', reason);
         socketWrapper.emit('close');
         wsServer.sockets.delete(socketWrapper);
     });
 
     socket.on('error', (error) => {
+        console.error('Socket error:', error);
         socketWrapper.emit('error', error);
     });
 
     socket.on('pong', () => {
         socketWrapper.emit('pong');
+    });
+
+    // Handle reconnection
+    socket.on('reconnect', (attemptNumber) => {
+        console.log('Client reconnected:', socket.id, 'Attempt:', attemptNumber);
+    });
+
+    socket.on('reconnect_error', (error) => {
+        console.error('Reconnection error:', error);
     });
 });
 

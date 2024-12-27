@@ -180,9 +180,24 @@ class Server extends WebSocket.Server {
       if (!p) return;
       p.updates = true;
       const keys = [];
+      
+      // Ensure lobby exists
+      let lobby = this.getRoom('lobby');
+      if (!lobby) {
+        lobby = new Room(p, this, 'lobby', 0);
+        this.rooms.set('lobby', lobby);
+      }
+      
+      // Add lobby first
+      keys.push(lobby.generateJSON());
+      
+      // Add other visible rooms
       this.rooms.forEach(r => {
-        if (r.settings.visible) keys.push(r.generateJSON());
+        if (r.settings.visible && r._id !== 'lobby') {
+          keys.push(r.generateJSON());
+        }
       });
+      
       return s.sendObject({
         m: 'ls',
         c: true,
