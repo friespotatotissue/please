@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 const http = require('http').Server(app);
+const path = require('path');
 const io = require('socket.io')(http, {
     cors: {
         origin: "*",
@@ -29,12 +30,18 @@ const WebSocket = require('ws');
 // Enable CORS for all routes
 app.use(cors());
 
-// Serve static files
-app.use(express.static(__dirname));
+// Serve static files - make sure this comes before route handlers
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/piano', express.static(path.join(__dirname)));
 
-// Handle room routes
+// Handle room routes - this should come after static file handling
 app.get('/piano/:roomId', (req, res) => {
-    res.sendFile(__dirname + '/index.html');
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Catch-all route for piano URLs
+app.get('/piano/*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Create WebSocket server instance
@@ -66,6 +73,9 @@ io.on('connection', (socket) => {
         }
     };
 
+    // Store client ID
+    socket.clientId = socket.handshake.query.clientId;
+
     // Create a Socket wrapper instance
     const socketWrapper = new Socket(wsServer, wsWrapper, {
         headers: {
@@ -80,7 +90,16 @@ io.on('connection', (socket) => {
 
     socket.on('message', (data) => {
         if (socket.connected) {
-            socketWrapper.emit('message', data);
+            try {
+                const msg = JSON.parse(data);
+                if (msg[0] && msg[0].m === "hi") {
+                    // Store the client ID when they say hi
+                    socket.clientId = msg[0].clientId;
+                }
+                socketWrapper.emit('message', data);
+            } catch (err) {
+                console.error('Error processing message:', err);
+            }
         }
     });
 
@@ -95,17 +114,19 @@ io.on('connection', (socket) => {
         socketWrapper.emit('error', error);
     });
 
-    socket.on('pong', () => {
-        socketWrapper.emit('pong');
+    // Improved reconnection handling
+    socket.on('reconnect_attempt', () => {
+        socket.io.opts.query = {
+            clientId: socket.clientId
+        };
     });
 
-    // Handle reconnection
     socket.on('reconnect', (attemptNumber) => {
         console.log('Client reconnected:', socket.id, 'Attempt:', attemptNumber);
-    });
-
-    socket.on('reconnect_error', (error) => {
-        console.error('Reconnection error:', error);
+        // Re-establish room state
+        if (socket.lastRoom) {
+            socket.join(socket.lastRoom);
+        }
     });
 });
 

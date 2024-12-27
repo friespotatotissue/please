@@ -81,7 +81,10 @@ Client.prototype.connect = function() {
 			reconnectionAttempts: Infinity,
 			forceNew: true,
 			path: '/socket.io',
-			timeout: 20000
+			timeout: 20000,
+			query: {
+				clientId: this.clientId
+			}
 		};
 
 		const serverUrl = 'https://please.up.railway.app';
@@ -106,10 +109,13 @@ Client.prototype.connect = function() {
 			if (self.pingInterval) clearInterval(self.pingInterval);
 			if (self.noteFlushInterval) clearInterval(self.noteFlushInterval);
 			
-			self.sendArray([{m: "hi"}]);
+			// Send initial hi message with client ID
+			self.sendArray([{m: "hi", clientId: self.clientId}]);
 			
 			self.pingInterval = setInterval(function() {
-				self.sendArray([{m: "t", e: Date.now()}]);
+				if (self.socket && self.socket.connected) {
+					self.sendArray([{m: "t", e: Date.now()}]);
+				}
 			}, 20000);
 			
 			self.noteBuffer = [];
@@ -132,25 +138,19 @@ Client.prototype.connect = function() {
 
 		this.socket.on("disconnect", function(reason) {
 			console.log("Socket.IO Connection Closed. Reason:", reason);
-			self.user = undefined;
-			self.participantId = undefined;
-			self.channel = undefined;
-			self.setParticipants([]);
-			clearInterval(self.pingInterval);
-			clearInterval(self.noteFlushInterval);
-			self.connected = false;
-
-			self.emit("disconnect");
-			self.emit("status", "Reconnecting...");
-
-			// Only increment connection attempts if we never had a successful connection
-			if(!self.connectionTime) {
-				++self.connectionAttempts;
-			}
 			
-			// Attempt to reconnect if disconnected unexpectedly
+			// Don't clear user state immediately on disconnect
 			if (reason === 'io server disconnect' || reason === 'transport close') {
+				// Server initiated disconnect - attempt immediate reconnection
 				self.socket.connect();
+			} else {
+				// Clear intervals but maintain state for potential reconnection
+				clearInterval(self.pingInterval);
+				clearInterval(self.noteFlushInterval);
+				self.connected = false;
+				
+				self.emit("disconnect");
+				self.emit("status", "Reconnecting...");
 			}
 		});
 
@@ -158,8 +158,8 @@ Client.prototype.connect = function() {
 			console.error("Connection error:", error);
 			self.emit("status", "Connection Error: " + error.message);
 			
-			// If we've failed to connect multiple times, force a new connection
 			if (self.connectionAttempts > 2) {
+				// Force a new connection after multiple failures
 				self.socket.disconnect();
 				setTimeout(() => {
 					self.connect();
