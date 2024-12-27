@@ -1143,18 +1143,40 @@ Rect.prototype.contains = function(x, y) {
 	var wssport = window.location.hostname == "www.multiplayerpiano.com" ? 443 : 8080;
 	var gClient = new Client("ws://" + window.location.hostname + ":" + wssport);
 	
-	// Add reconnection handling
+	// Add robust connection handling
 	var reconnectionAttempts = 0;
-	var maxReconnectionAttempts = 5;
+	var maxReconnectionAttempts = 10; // Increased from 5
 	var reconnectionDelay = 2000;
+	var reconnectionBackoff = 1.5; // Exponential backoff multiplier
+	var isReconnecting = false;
+
+	function generateUniqueClientId() {
+		return Date.now().toString(36) + Math.random().toString(36).substr(2);
+	}
+
+	// Store client ID in localStorage to maintain consistency across tabs
+	if (!localStorage.getItem('clientId')) {
+		localStorage.setItem('clientId', generateUniqueClientId());
+	}
+	
+	gClient.clientId = localStorage.getItem('clientId');
 
 	gClient.on("disconnect", function() {
 		console.log("Disconnected. Attempting to reconnect...");
+		if (!isReconnecting) {
+			isReconnecting = true;
+			attemptReconnect();
+		}
+	});
+
+	function attemptReconnect() {
 		if (reconnectionAttempts < maxReconnectionAttempts) {
 			setTimeout(function() {
 				reconnectionAttempts++;
 				console.log("Reconnection attempt " + reconnectionAttempts);
 				gClient.start();
+				// Increase delay exponentially for next attempt
+				reconnectionDelay *= reconnectionBackoff;
 			}, reconnectionDelay);
 		} else {
 			console.log("Max reconnection attempts reached. Please refresh the page.");
@@ -1165,11 +1187,24 @@ Rect.prototype.contains = function(x, y) {
 				duration: -1
 			});
 		}
-	});
+	}
 
 	gClient.on("connect", function() {
 		reconnectionAttempts = 0;
+		reconnectionDelay = 2000; // Reset delay
+		isReconnecting = false;
 		console.log("Connected successfully");
+		
+		// Send client ID to server for validation
+		gClient.sendArray([{m: "hi", clientId: gClient.clientId}]);
+	});
+
+	// Handle crown ownership based on client ID
+	gClient.on("ch", function(msg) {
+		if (msg.ch.crown && msg.ch.crown.clientId === gClient.clientId) {
+			// This client is the true owner
+			msg.ch.crown.participantId = gClient.participantId;
+		}
 	});
 
 	gClient.setChannel(channel_id);
@@ -1302,8 +1337,7 @@ Rect.prototype.contains = function(x, y) {
 		});
 		function updateCursor(msg) {
 			if (!msg || !msg.id || typeof msg.x === 'undefined' || typeof msg.y === 'undefined') {
-				console.log("Received invalid cursor update:", msg);
-				return;
+				return; // Silently return instead of logging
 			}
 			const part = gClient.ppl[msg.id];
 			if (part && part.cursorDiv) {
@@ -2074,8 +2108,8 @@ Rect.prototype.contains = function(x, y) {
 		if(channel.settings.lobby) {
       info.addClass("lobby");
       info.css({
-        '--color': channel.settings.color,
-        '--color2': channel.settings.color2
+        '--color': channel.settings.color || '#73b3cc',
+        '--color2': channel.settings.color2 || '#273546'
       });
     }
 		else info.removeClass("lobby");
