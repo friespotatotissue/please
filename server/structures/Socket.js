@@ -13,7 +13,6 @@ class Socket extends EventEmitter {
     this.ws = ws;
     this.ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
     this.id = sha1(this.ip).substring(0, 20);
-    this.isAlive = true;
     this.bindEvents();
     this.bindEventListeners();
     this.debug('New Socket Constructed');
@@ -42,9 +41,6 @@ class Socket extends EventEmitter {
       for (let i = 0; i < d.length; i++) {
         this.server.handleData(this, d[i]);
       }
-    });
-    this.on('pong', () => {
-      this.heartbeat();
     });
     this.on('close', () => {
       this.close();
@@ -85,10 +81,6 @@ class Socket extends EventEmitter {
   }
   ping(noop) {
     return this.ws.ping(noop);
-  }
-  // Broken Connections
-  heartbeat() {
-    this.isAlive = true;
   }
 }
 

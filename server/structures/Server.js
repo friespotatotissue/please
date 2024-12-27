@@ -15,14 +15,6 @@ class Server extends WebSocket.Server {
     this.participants = new Map();
     this.rooms = new Map();
     this.bindEventListeners();
-    // Broken Connections
-    setInterval(() => {
-      this.sockets.forEach(s => {
-        if (s.isAlive == false) return s.ws.terminate();
-        s.isAlive = false;
-        s.ping(() => {}); // eslint-disable-line no-empty-function
-      });
-    }, 30000);
   }
   removeTextHell(text) {
     return text.replace(/[^\w\s`1234567890\-=~!@#$%^&*()_+,.\/<>?\[\]\\\{}|;':"]/g, '');
