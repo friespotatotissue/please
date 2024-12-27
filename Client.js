@@ -90,7 +90,7 @@ Client.prototype.connect = function() {
 			timeout: 20000
 		};
 
-		const serverUrl = 'https://please.up.railway.app';
+		const serverUrl = 'http://localhost:3000';
 		console.log('Connecting to server:', serverUrl);
 
 		if(typeof module !== "undefined") {
