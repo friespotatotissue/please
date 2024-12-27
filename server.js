@@ -9,7 +9,9 @@ const io = require('socket.io')(http, {
         credentials: true
     },
     transports: ['websocket', 'polling'],
-    allowEIO3: true
+    allowEIO3: true,
+    pingTimeout: 60000,
+    pingInterval: 25000
 });
 
 // Enable CORS for all routes
@@ -37,6 +39,16 @@ io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
     let currentChannel = null;
 
+    // Send initial connection acknowledgment
+    socket.emit('connect_confirmed');
+
+    socket.on('disconnect', (reason) => {
+        console.log('Client disconnected:', socket.id, reason);
+        if (currentChannel && channels[currentChannel]) {
+            channels[currentChannel].participants.delete(socket.id);
+        }
+    });
+
     socket.on('message', (data) => {
         try {
             const messages = typeof data === 'string' ? JSON.parse(data) : data;
@@ -44,93 +56,32 @@ io.on('connection', (socket) => {
 
             // Handle each message in the array
             if (Array.isArray(messages)) {
-                messages.forEach(msg => {
-                    switch(msg.m) {
-                        case "hi":
-                            // Send initial hi response
-                            socket.emit('message', JSON.stringify([{
-                                m: "hi",
-                                u: { _id: socket.id, name: "Anonymous" },
-                                t: Date.now()
-                            }]));
-                            break;
-                        
-                        case "ch":
-                            // Handle channel join request
-                            const channelId = msg._id || "lobby";
-                            currentChannel = channels[channelId] || channels.lobby;
-                            
-                            // Add participant to channel
-                            currentChannel.participants.set(socket.id, {
-                                id: socket.id,
-                                name: "Anonymous",
-                                x: 0,
-                                y: 0
-                            });
-
-                            // Join socket.io room
-                            socket.join(channelId);
-
-                            // Send channel info
-                            socket.emit('message', JSON.stringify([{
-                                m: "ch",
-                                ch: {
-                                    _id: currentChannel._id,
-                                    settings: currentChannel.settings
-                                },
-                                p: socket.id,
-                                ppl: Array.from(currentChannel.participants.values())
-                            }]));
-                            break;
-
-                        case "t":
-                            // Handle time sync
-                            socket.emit('message', JSON.stringify([{
-                                m: "t",
-                                t: Date.now(),
-                                e: msg.e
-                            }]));
-                            break;
-
-                        default:
-                            // Broadcast other messages to the channel
-                            if (currentChannel) {
-                                io.to(currentChannel._id).emit('message', JSON.stringify([msg]));
-                            }
-                    }
-                });
+                messages.forEach(msg => handleMessage(socket, msg));
+            } else {
+                handleMessage(socket, messages);
             }
-        } catch (err) {
-            console.error('Error handling message:', err);
-            socket.emit('error', 'Invalid message format');
+        } catch (error) {
+            console.error('Error handling message:', error);
+            socket.emit('error', { message: 'Invalid message format' });
         }
-    });
-
-    socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
-        if (currentChannel) {
-            // Remove participant from channel
-            currentChannel.participants.delete(socket.id);
-            // Notify others in the channel
-            io.to(currentChannel._id).emit('message', JSON.stringify([{
-                m: "bye",
-                p: socket.id
-            }]));
-        }
-    });
-
-    socket.on('error', (error) => {
-        console.error('Socket error:', error);
     });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-    console.error('Server error:', err);
-    res.status(500).send('Internal Server Error');
-});
+function handleMessage(socket, msg) {
+    switch(msg.m) {
+        case "hi":
+            socket.emit('hi', {
+                t: Date.now(),
+                u: socket.id,
+                m: "hi",
+                token: Math.random().toString(36).substring(2)
+            });
+            break;
+        // Add other message handlers here
+    }
+}
 
 const PORT = process.env.PORT || 3000;
-http.listen(PORT, '0.0.0.0', () => {
+http.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 }); 
