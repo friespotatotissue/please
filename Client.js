@@ -1,7 +1,7 @@
 /* eslint-disable */
 if(typeof module !== "undefined") {
 	module.exports = Client;
-	WebSocket = require("ws");
+	io = require("socket.io-client");
 	EventEmitter = require("events").EventEmitter;
 } else {
 	this.Client = Client;
@@ -20,7 +20,7 @@ function mixin(obj1, obj2) {
 function Client(uri) {
 	EventEmitter.call(this);
 	this.uri = uri;
-	this.ws = undefined;
+	this.socket = undefined;
 	this.serverTimeOffset = 0;
 	this.user = undefined;
 	this.participantId = undefined;
@@ -46,15 +46,15 @@ mixin(Client.prototype, EventEmitter.prototype);
 Client.prototype.constructor = Client;
 
 Client.prototype.isSupported = function() {
-	return typeof WebSocket === "function";
+	return typeof io === "function";
 };
 
 Client.prototype.isConnected = function() {
-	return this.isSupported() && this.ws && this.ws.readyState === WebSocket.OPEN;
+	return this.isSupported() && this.socket && this.socket.connected;
 };
 
 Client.prototype.isConnecting = function() {
-	return this.isSupported() && this.ws && this.ws.readyState === WebSocket.CONNECTING;
+	return this.isSupported() && this.socket && this.socket.connecting;
 };
 
 Client.prototype.start = function() {
@@ -64,68 +64,50 @@ Client.prototype.start = function() {
 
 Client.prototype.stop = function() {
 	this.canConnect = false;
-	this.ws.close();
+	if (this.socket) this.socket.disconnect();
 };
 
 Client.prototype.connect = function() {
 	if(!this.canConnect || !this.isSupported() || this.isConnected() || this.isConnecting())
 		return;
 	this.emit("status", "Connecting...");
-	console.log("Attempting WebSocket connection with canConnect:", this.canConnect, 
+	console.log("Attempting Socket.IO connection with canConnect:", this.canConnect, 
 		"isSupported:", this.isSupported(), 
 		"isConnected:", this.isConnected(), 
 		"isConnecting:", this.isConnecting());
 	
 	try {
+		const socketOptions = {
+			transports: ['websocket'],
+			reconnection: true,
+			reconnectionDelay: 1000,
+			reconnectionDelayMax: 5000,
+			reconnectionAttempts: Infinity
+		};
+
 		if(typeof module !== "undefined") {
 			// nodejsicle
-			this.ws = new WebSocket('wss://please-production.up.railway.app', {
-				"origin": "http://www.multiplayerpiano.com",
-				"user-agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36"
+			this.socket = io('https://please.up.railway.app', {
+				...socketOptions,
+				extraHeaders: {
+					"origin": "http://www.multiplayerpiano.com",
+					"user-agent": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36"
+				}
 			});
 		} else {
 			// browseroni
-			this.ws = new WebSocket('wss://please-production.up.railway.app');
+			this.socket = io('https://please.up.railway.app', socketOptions);
 		}
 	} catch (err) {
-		console.error("WebSocket Connection Error:", err);
+		console.error("Socket.IO Connection Error:", err);
 		this.emit("status", "Connection Error: " + err.message);
 		return;
 	}
+
 	var self = this;
-	this.ws.addEventListener("close", function(evt) {
-		console.log("WebSocket Connection Closed:", evt);
-		self.user = undefined;
-		self.participantId = undefined;
-		self.channel = undefined;
-		self.setParticipants([]);
-		clearInterval(self.pingInterval);
-		clearInterval(self.noteFlushInterval);
-
-		self.emit("disconnect");
-		self.emit("status", "Offline mode");
-
-		// reconnect!
-		if(self.connectionTime) {
-			self.connectionTime = undefined;
-			self.connectionAttempts = 0;
-		} else {
-			++self.connectionAttempts;
-		}
-		var ms_lut = [50, 2950, 7000, 10000];
-		var idx = self.connectionAttempts;
-		if(idx >= ms_lut.length) idx = ms_lut.length - 1;
-		var ms = ms_lut[idx];
-		console.log("Reconnection attempt in", ms, "ms. Attempt number:", self.connectionAttempts);
-		setTimeout(self.connect.bind(self), ms);
-	});
-	this.ws.addEventListener("error", function(err) {
-		console.error("WebSocket Error Event:", err);
-		self.emit("status", "WebSocket Error");
-		self.ws.close(); // self.ws.emit("close");
-	});
-	this.ws.addEventListener("open", function(evt) {
-		console.log("WebSocket Connection Opened:", evt);
+	
+	this.socket.on("connect", function() {
+		console.log("Socket.IO Connection Opened");
 		self.connectionTime = Date.now();
 		self.sendArray([{m: "hi"}]);
 		self.pingInterval = setInterval(function() {
@@ -144,12 +126,36 @@ Client.prototype.connect = function() {
 		self.emit("connect");
 		self.emit("status", "Joining channel...");
 	});
-	this.ws.addEventListener("message", function(evt) {
-		var transmission = JSON.parse(evt.data);
-		// console.log(transmission);
+
+	this.socket.on("disconnect", function() {
+		console.log("Socket.IO Connection Closed");
+		self.user = undefined;
+		self.participantId = undefined;
+		self.channel = undefined;
+		self.setParticipants([]);
+		clearInterval(self.pingInterval);
+		clearInterval(self.noteFlushInterval);
+
+		self.emit("disconnect");
+		self.emit("status", "Offline mode");
+
+		if(self.connectionTime) {
+			self.connectionTime = undefined;
+			self.connectionAttempts = 0;
+		} else {
+			++self.connectionAttempts;
+		}
+	});
+
+	this.socket.on("error", function(err) {
+		console.error("Socket.IO Error:", err);
+		self.emit("status", "Socket.IO Error");
+	});
+
+	this.socket.on("message", function(data) {
+		var transmission = JSON.parse(data);
 		for(var i = 0; i < transmission.length; i++) {
-			var msg = transmission[i];
-			self.emit(msg.m, msg);
+			self.emit(transmission[i].m, transmission[i]);
 		}
 	});
 };
@@ -187,11 +193,13 @@ Client.prototype.bindEventListeners = function() {
 };
 
 Client.prototype.send = function(raw) {
-	if(this.isConnected()) this.ws.send(raw);
+	if(this.isConnected()) this.socket.send(raw);
 };
 
 Client.prototype.sendArray = function(arr) {
-	this.send(JSON.stringify(arr));
+	if(this.isConnected()) {
+		this.socket.send(JSON.stringify(arr));
+	}
 };
 
 Client.prototype.setChannel = function(id, set) {
