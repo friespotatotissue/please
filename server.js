@@ -32,6 +32,11 @@ app.use(cors());
 // Serve static files
 app.use(express.static(__dirname));
 
+// Handle room routes
+app.get('/piano/:roomId', (req, res) => {
+    res.sendFile(__dirname + '/index.html');
+});
+
 // Create WebSocket server instance
 const wsServer = new Server();
 

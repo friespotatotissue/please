@@ -495,8 +495,7 @@ Rect.prototype.contains = function(x, y) {
 			gain.linearRampToValueAtTime(gain.value * 0.1, time + 0.16);
 			gain.linearRampToValueAtTime(0.0, time + 0.4);
 			this.playings[id].source.stop(time + 0.41);
-			
-
+		
 			if(this.playings[id].voice) {
 				this.playings[id].voice.stop(time);
 			}
@@ -1247,10 +1246,10 @@ Rect.prototype.contains = function(x, y) {
 				$(div).addClass("owner");
 			}
 			if(gPianoMutes.indexOf(part._id) !== -1) {
-				$(part.nameDiv).addClass("muted-notes");
+				$(div).addClass("muted-notes");
 			}
 			if(gChatMutes.indexOf(part._id) !== -1) {
-				$(part.nameDiv).addClass("muted-chat");
+				$(div).addClass("muted-chat");
 			}
 			div.style.display = "none";
 			part.nameDiv = $("#names")[0].appendChild(div);
@@ -1307,46 +1306,75 @@ Rect.prototype.contains = function(x, y) {
 			.css("background-color", color);
 		});
 		gClient.on("ch", function(msg) {
-			for(var id in gClient.ppl) {
-				if(gClient.ppl.hasOwnProperty(id)) {
+			if(msg.p) gClient.participantId = msg.p;
+			
+			if(msg.ppl) {
+				for(var id in gClient.ppl) {
+					if(!gClient.ppl.hasOwnProperty(id)) continue;
 					var part = gClient.ppl[id];
-					if(part.id === gClient.participantId) {
-						$(part.nameDiv).addClass("me");
-					} else {
-						$(part.nameDiv).removeClass("me");
-					}
-					if(msg.ch.crown && msg.ch.crown.participantId === part.id) {
+					// Reset owner status for all participants
+					$(part.nameDiv).removeClass("owner");
+					$(part.cursorDiv).removeClass("owner");
+				}
+				
+				// Update participants with new state
+				gClient.setParticipants(msg.ppl);
+			}
+			
+			// Update crown and settings
+			gClient.channel = msg.ch;
+			if(gClient.channel.crown) {
+				for(var id in gClient.ppl) {
+					if(!gClient.ppl.hasOwnProperty(id)) continue;
+					var part = gClient.ppl[id];
+					if(gClient.channel.crown.participantId === part.id) {
 						$(part.nameDiv).addClass("owner");
 						$(part.cursorDiv).addClass("owner");
-					} else {
-						$(part.nameDiv).removeClass("owner");
-						$(part.cursorDiv).removeClass("owner");
-					}
-					if(gPianoMutes.indexOf(part._id) !== -1) {
-						$(part.nameDiv).addClass("muted-notes");
-					} else {
-						$(part.nameDiv).removeClass("muted-notes");
-					}
-					if(gChatMutes.indexOf(part._id) !== -1) {
-						$(part.nameDiv).addClass("muted-chat");
-					} else {
-						$(part.nameDiv).removeClass("muted-chat");
 					}
 				}
 			}
+			
+			if(gClient.isOwner()) {
+				$("#room-settings-btn").show();
+			} else {
+				$("#room-settings-btn").hide();
+			}
 		});
 		function updateCursor(msg) {
-			if (!msg || !msg.id || typeof msg.x === 'undefined' || typeof msg.y === 'undefined') {
-				return; // Silently return instead of logging
+			if (!msg || typeof msg.x === 'undefined' || typeof msg.y === 'undefined') {
+				return;
 			}
-			const part = gClient.ppl[msg.id];
+			
+			// Handle both participant objects and cursor update messages
+			const id = msg.id || msg.participantId;
+			if (!id) return;
+			
+			const part = gClient.ppl[id];
 			if (part && part.cursorDiv) {
 				part.cursorDiv.style.left = msg.x + "%";
 				part.cursorDiv.style.top = msg.y + "%";
 			}
 		}
 		gClient.on("m", updateCursor);
-		gClient.on("participant added", updateCursor);
+		// Remove this line as it was causing duplicate cursor updates
+		// gClient.on("participant added", updateCursor);
+
+		gClient.on("participant update", function(part) {
+			if (!part || !part.id) return;
+			
+			var name = part.name || "";
+			var color = part.color || "#777";
+			if (part.nameDiv) {
+				part.nameDiv.style.backgroundColor = color;
+				part.nameDiv.textContent = name;
+			}
+			if (part.cursorDiv) {
+				$(part.cursorDiv)
+					.find(".name")
+					.text(name)
+					.css("background-color", color);
+			}
+		});
 	})();
 
 

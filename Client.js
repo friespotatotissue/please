@@ -71,10 +71,6 @@ Client.prototype.connect = function() {
 	if(!this.canConnect || !this.isSupported() || this.isConnected() || this.isConnecting())
 		return;
 	this.emit("status", "Connecting...");
-	console.log("Attempting Socket.IO connection with canConnect:", this.canConnect, 
-		"isSupported:", this.isSupported(), 
-		"isConnected:", this.isConnected(), 
-		"isConnecting:", this.isConnecting());
 	
 	try {
 		const socketOptions = {
@@ -84,11 +80,17 @@ Client.prototype.connect = function() {
 			reconnectionDelayMax: 5000,
 			reconnectionAttempts: Infinity,
 			forceNew: true,
-			path: '/socket.io'
+			path: '/socket.io',
+			timeout: 20000
 		};
 
 		const serverUrl = 'https://please.up.railway.app';
 		console.log('Connecting to server:', serverUrl);
+
+		if (this.socket) {
+			this.socket.disconnect();
+			this.socket.removeAllListeners();
+		}
 
 		this.socket = io(serverUrl, socketOptions);
 		
@@ -99,6 +101,10 @@ Client.prototype.connect = function() {
 			self.connectionTime = Date.now();
 			self.connectionAttempts = 0;
 			self.connected = true;
+			
+			// Clear any existing intervals
+			if (self.pingInterval) clearInterval(self.pingInterval);
+			if (self.noteFlushInterval) clearInterval(self.noteFlushInterval);
 			
 			self.sendArray([{m: "hi"}]);
 			
@@ -124,8 +130,8 @@ Client.prototype.connect = function() {
 			}
 		});
 
-		this.socket.on("disconnect", function() {
-			console.log("Socket.IO Connection Closed");
+		this.socket.on("disconnect", function(reason) {
+			console.log("Socket.IO Connection Closed. Reason:", reason);
 			self.user = undefined;
 			self.participantId = undefined;
 			self.channel = undefined;
@@ -135,24 +141,30 @@ Client.prototype.connect = function() {
 			self.connected = false;
 
 			self.emit("disconnect");
-			self.emit("status", "Offline mode");
+			self.emit("status", "Reconnecting...");
 
-			if(self.connectionTime) {
-				self.connectionTime = undefined;
-				self.connectionAttempts = 0;
-			} else {
+			// Only increment connection attempts if we never had a successful connection
+			if(!self.connectionTime) {
 				++self.connectionAttempts;
 			}
-		});
-
-		this.socket.on("error", function(err) {
-			console.error("Socket.IO Error:", err);
-			self.emit("status", "Socket.IO Error");
+			
+			// Attempt to reconnect if disconnected unexpectedly
+			if (reason === 'io server disconnect' || reason === 'transport close') {
+				self.socket.connect();
+			}
 		});
 
 		this.socket.on("connect_error", function(error) {
 			console.error("Connection error:", error);
 			self.emit("status", "Connection Error: " + error.message);
+			
+			// If we've failed to connect multiple times, force a new connection
+			if (self.connectionAttempts > 2) {
+				self.socket.disconnect();
+				setTimeout(() => {
+					self.connect();
+				}, 1000);
+			}
 		});
 
 		this.socket.on("message", function(data) {
