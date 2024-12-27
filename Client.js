@@ -78,17 +78,15 @@ Client.prototype.connect = function() {
 	
 	try {
 		const socketOptions = {
-			transports: ['websocket', 'polling'],
+			transports: ['websocket'],
 			reconnection: true,
-			reconnectionDelay: 1000,
-			reconnectionDelayMax: 5000,
-			reconnectionAttempts: Infinity,
+			reconnectionDelay: 3000,
+			reconnectionDelayMax: 10000,
+			reconnectionAttempts: 5,
 			forceNew: true,
 			path: '/socket.io',
-			autoConnect: true,
-			withCredentials: true,
-			timeout: 20000,
-			secure: true
+			autoConnect: false,
+			timeout: 10000
 		};
 
 		const serverUrl = 'wss://please.up.railway.app';
