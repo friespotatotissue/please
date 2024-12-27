@@ -83,12 +83,18 @@ Client.prototype.connect = function() {
 			reconnectionDelay: 1000,
 			reconnectionDelayMax: 5000,
 			reconnectionAttempts: Infinity,
-			forceNew: true
+			forceNew: true,
+			path: '/socket.io',
+			autoConnect: true,
+			withCredentials: true
 		};
+
+		const serverUrl = 'https://please.up.railway.app';
+		console.log('Connecting to server:', serverUrl);
 
 		if(typeof module !== "undefined") {
 			// nodejsicle
-			this.socket = io('https://please.up.railway.app', {
+			this.socket = io(serverUrl, {
 				...socketOptions,
 				extraHeaders: {
 					"origin": "http://www.multiplayerpiano.com",
@@ -97,8 +103,20 @@ Client.prototype.connect = function() {
 			});
 		} else {
 			// browseroni
-			this.socket = io('https://please.up.railway.app', socketOptions);
+			this.socket = io(serverUrl, socketOptions);
 		}
+
+		// Add connection event listeners
+		this.socket.on('connect_error', (error) => {
+			console.error('Connection error:', error);
+			this.emit("status", "Connection Error: " + error.message);
+		});
+
+		this.socket.on('connect_timeout', () => {
+			console.error('Connection timeout');
+			this.emit("status", "Connection Timeout");
+		});
+
 	} catch (err) {
 		console.error("Socket.IO Connection Error:", err);
 		this.emit("status", "Connection Error: " + err.message);
