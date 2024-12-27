@@ -145,6 +145,7 @@ Client.prototype.connect = function() {
 	this.socket.on("connect", function() {
 		console.log("Socket.IO Connection Opened");
 		self.connectionTime = Date.now();
+		console.log("Sending initial hi message");
 		self.sendArray([{m: "hi"}]);
 		self.pingInterval = setInterval(function() {
 			self.sendArray([{m: "t", e: Date.now()}]);
@@ -189,13 +190,20 @@ Client.prototype.connect = function() {
 	});
 
 	this.socket.on("message", function(data) {
+		console.log("Raw message received:", data);
 		try {
 			var transmission = JSON.parse(data);
+			console.log("Parsed message:", transmission);
 			for(var i = 0; i < transmission.length; i++) {
 				self.emit(transmission[i].m, transmission[i]);
 			}
 		} catch (err) {
 			console.error("Error parsing message:", err);
+			// Try handling it as a direct message object if parsing fails
+			if (data && typeof data === 'object' && data.m) {
+				console.log("Handling as direct message object");
+				self.emit(data.m, data);
+			}
 		}
 	});
 };
@@ -203,9 +211,11 @@ Client.prototype.connect = function() {
 Client.prototype.bindEventListeners = function() {
 	var self = this;
 	this.on("hi", function(msg) {
+		console.log("Received hi response from server:", msg);
 		self.user = msg.u;
 		self.receiveServerTime(msg.t, msg.e || undefined);
 		if(self.desiredChannelId) {
+			console.log("Sending channel join request for:", self.desiredChannelId);
 			self.setChannel();
 		}
 	});
@@ -213,6 +223,7 @@ Client.prototype.bindEventListeners = function() {
 		self.receiveServerTime(msg.t, msg.e || undefined);
 	});
 	this.on("ch", function(msg) {
+		console.log("Received channel info:", msg);
 		if (!msg.ch) {
 			console.error("Received invalid channel message:", msg);
 			return;
