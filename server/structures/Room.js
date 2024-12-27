@@ -80,18 +80,27 @@ class Room {
       // Handle crown transfer if crown holder leaves
       if (this.crown && this.crown.userId === _id) {
         if (this.ppl.length > 0) {
-          const nextParticipant = this.ppl[0];
-          this.crown = {
-            participantId: nextParticipant.id,
-            userId: nextParticipant._id,
-            time: Date.now()
-          };
-          // Notify about crown transfer
-          if (this.server) {
-            this.server.broadcastTo({
-              m: 'ch',
-              ch: this.generateJSON()
-            }, this.ppl.map(p => p._id));
+          // Find next connected participant
+          const nextParticipant = this.ppl.find(p => {
+            const participant = this.server.participants.get(p._id);
+            return participant && participant.isConnected;
+          });
+          
+          if (nextParticipant) {
+            this.crown = {
+              participantId: nextParticipant.id,
+              userId: nextParticipant._id,
+              time: Date.now()
+            };
+            // Notify about crown transfer
+            if (this.server) {
+              this.server.broadcastTo({
+                m: 'ch',
+                ch: this.generateJSON()
+              }, this.ppl.map(p => p._id));
+            }
+          } else {
+            this.crown = null;
           }
         } else {
           this.crown = null;
@@ -112,7 +121,7 @@ class Room {
     const json = {
       _id: this._id,
       settings: this.settings,
-      count: this.count
+      count: this.server.getRoomCount(this._id)
     };
     if (this.crown) {
       json.crown = this.crown;

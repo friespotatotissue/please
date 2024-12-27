@@ -74,15 +74,17 @@ class Socket extends EventEmitter {
     const p = this.server.participants.get(this.ipBasedId);
     if (p) {
       p.isConnected = false;
-      // Don't delete the participant, just mark as disconnected
-      // this.server.participants.delete(this.id);
+      p.lastSeen = Date.now();
     }
+
+    // Remove from rooms but don't delete participant data
     this.server.rooms.forEach(r => {
       if (r.findParticipant(this.ipBasedId)) {
         r.removeParticipant(this.ipBasedId);
       }
     });
-    // Clean up disconnected participants
+
+    // Clean up disconnected participants from rooms
     this.server.cleanupParticipants();
   }
   ping(noop) {
