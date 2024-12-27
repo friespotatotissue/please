@@ -1,10 +1,22 @@
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const path = require('path');
+
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server);
+
+const PORT = process.env.PORT || 3000;
+
 // Serve static files
-app.use(express.static(__dirname));
+app.use(express.static(path.join(__dirname)));
 
 // Basic health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).send('OK');
 });
+
 // Store active channels and participants
 const channels = {
     lobby: {
@@ -114,4 +126,9 @@ io.on('connection', (socket) => {
     socket.on('error', (error) => {
         console.error('Socket error:', error);
     });
+});
+
+// Start the server
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
