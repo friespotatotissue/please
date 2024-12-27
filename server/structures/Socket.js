@@ -16,9 +16,10 @@ class Socket extends EventEmitter {
     this.ipBasedId = sha1(this.ip).substring(0, 20);
     this.isAlive = true;
     this.isConnected = true;
+    this.connectionTime = Date.now();
     this.bindEvents();
     this.bindEventListeners();
-    this.debug('New Socket Constructed with ID: ' + this.id + ' (IP-based: ' + this.ipBasedId + ')');
+    this.debug('New Socket Constructed with ID: ' + this.id);
   }
   bindEvents() {
     const self = this;
@@ -73,18 +74,24 @@ class Socket extends EventEmitter {
     this.isConnected = false;
     const p = this.server.participants.get(this.ipBasedId);
     if (p) {
-      p.isConnected = false;
-      p.lastSeen = Date.now();
+      const activeSockets = Array.from(this.server.sockets).filter(s => 
+        s.ipBasedId === this.ipBasedId && s.isConnected && s.id !== this.id
+      );
+      
+      if (activeSockets.length === 0) {
+        p.isConnected = false;
+        p.lastSeen = Date.now();
+      }
     }
 
-    // Remove from rooms but don't delete participant data
     this.server.rooms.forEach(r => {
-      if (r.findParticipant(this.ipBasedId)) {
-        r.removeParticipant(this.ipBasedId);
+      const pR = r.findParticipant(this.id);
+      if (pR) {
+        r.removeParticipant(this.id);
+        r.count = r.ppl.length;
       }
     });
 
-    // Clean up disconnected participants from rooms
     this.server.cleanupParticipants();
   }
   ping(noop) {

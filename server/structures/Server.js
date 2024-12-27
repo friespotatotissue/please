@@ -76,10 +76,12 @@ class Server extends WebSocket.Server {
         // Update existing participant's connection state
         p.isConnected = true;
         p.lastSeen = Date.now();
-        // Remove participant from any old rooms
+        // Remove participant from any old rooms only if using same socket ID
         this.rooms.forEach(r => {
-          if (r.findParticipant(p._id)) {
-            r.removeParticipant(p._id);
+          const existingPR = r.findParticipant(s.id);
+          if (existingPR) {
+            r.removeParticipant(s.id);
+            if (r.count <= 0) this.rooms.delete(r._id);
           }
         });
       }
@@ -93,11 +95,14 @@ class Server extends WebSocket.Server {
     if (data.m == 'ch') {
       const p = this.getParticipant(s);
       if (!p) return;
-      // Old Room
+      // Old Room - only remove from rooms where this socket ID exists
       const old = this.getRoom(p.room);
       if (old) {
-        old.removeParticipant(s.id);
-        if (old.count <= 0) this.rooms.delete(p.room);
+        const existingPR = old.findParticipant(s.id);
+        if (existingPR) {
+          old.removeParticipant(s.id);
+          if (old.count <= 0) this.rooms.delete(old._id);
+        }
       }
       // New Room
       let r = this.getRoom(data._id);
@@ -105,10 +110,11 @@ class Server extends WebSocket.Server {
         r = this.newRoom(data, p);
       }
       
-      // Create participant first
+      // Create participant first - use socket ID for unique identification
       let pR = r.findParticipant(s.id);
       if (!pR) {
         pR = r.newParticipant(p, s);
+        r.count = r.ppl.length; // Update count when adding new participant
       }
       p.room = r._id;
 
@@ -126,11 +132,11 @@ class Server extends WebSocket.Server {
         m: 'ch',
         ch: r.generateJSON(),
         p: pR.id,
-        ppl: r.ppl.length > 0 ? r.ppl : null
+        ppl: r.ppl
       };
 
       // Broadcast room update to all participants
-      this.broadcastTo(roomInfo, r.ppl.map(tpR => tpR._id));
+      this.broadcastTo(roomInfo, r.ppl.map(tpR => tpR.id));
 
       // Also send note quota info
       if (r._id.toLowerCase().includes('black')) {
