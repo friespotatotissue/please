@@ -52,18 +52,22 @@ class Server extends WebSocket.Server {
     if (!['t', 'm', 'n'].includes(data.m)) console.log(data);
     if (data.m == 'hi') {
       let p;
-      // Check if there's a stored ID and try to retrieve the participant
-      if (data.stored_id) {
-        p = this.participants.get(data.stored_id);
-      }
-      // If no stored participant found, create a new one
+      // First try to find an existing participant by IP-based ID
+      this.participants.forEach((participant, id) => {
+        if (participant._id === s.ipBasedId) {
+          p = participant;
+        }
+      });
+
+      // If no participant found, create a new one with IP-based ID
       if (!p) {
         p = this.newParticipant(s);
       } else {
-        // Update the socket ID for the existing participant
-        p._id = s.id;
-        this.participants.set(s.id, p);
+        // Update the socket ID but keep the IP-based ID
+        p._id = s.ipBasedId;
+        this.participants.set(s.ipBasedId, p);
       }
+
       return s.sendObject({
         m: 'hi',
         u: p.generateJSON(),
@@ -273,13 +277,20 @@ class Server extends WebSocket.Server {
   }
   // Participants
   newParticipant(s) {
-    const p = new Participant(s.id, 'Anonymous',
+    // Use the IP-based ID instead of socket ID
+    const p = new Participant(s.ipBasedId, 'Anonymous',
       `#${Math.floor(Math.random() * 16777215).toString(16)}`);
-    this.participants.set(s.id, p);
+    this.participants.set(s.ipBasedId, p);
     return p;
   }
   getParticipant(s) {
-    return this.participants.get(s.id);
+    // Try to get participant by IP-based ID first
+    let p = this.participants.get(s.ipBasedId);
+    if (!p) {
+      // Fall back to socket ID if not found
+      p = this.participants.get(s.id);
+    }
+    return p;
   }
   // Rooms
   newRoom(data, p) {

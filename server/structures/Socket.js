@@ -13,10 +13,11 @@ class Socket extends EventEmitter {
     this.ws = ws;
     this.ip = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
     this.id = sha1(this.ip).substring(0, 20);
+    this.ipBasedId = this.id;
     this.isAlive = true;
     this.bindEvents();
     this.bindEventListeners();
-    this.debug('New Socket Constructed');
+    this.debug('New Socket Constructed with IP-based ID: ' + this.id);
   }
   bindEvents() {
     const self = this;

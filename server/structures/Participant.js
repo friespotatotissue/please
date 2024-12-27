@@ -15,6 +15,7 @@ class Participant {
     this.color = color;
     this.room = null;
     this.updates = false;
+    this.lastSeen = Date.now();
 
     // Ensure database directory exists
     const dbDir = path.join(process.cwd(), 'database');
@@ -35,6 +36,10 @@ class Participant {
     if (pdb[this._id]) {
       this.name = pdb[this._id].name;
       this.color = pdb[this._id].color;
+      this.lastSeen = Date.now();
+      // Update the database with new last seen time
+      pdb[this._id] = this.generateJSON();
+      this.updateFile(pdb);
     } else {
       pdb[this._id] = this.generateJSON();
       this.updateFile(pdb);
@@ -77,6 +82,7 @@ class Participant {
       // Update the participant's data
       this.name = name || this.name;
       this.color = color || this.color;
+      this.lastSeen = Date.now();
 
       // Update the database
       pdb[this._id] = this.generateJSON();
@@ -98,7 +104,8 @@ class Participant {
     return {
       _id: this._id,
       name: this.name,
-      color: this.color
+      color: this.color,
+      lastSeen: this.lastSeen
     };
   }
 }
