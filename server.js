@@ -56,9 +56,9 @@ io.on('connection', (socket) => {
 
             // Handle each message in the array
             if (Array.isArray(messages)) {
-                messages.forEach(msg => handleMessage(socket, msg));
+                messages.forEach(msg => handleMessage(socket, msg, currentChannel, (ch) => currentChannel = ch));
             } else {
-                handleMessage(socket, messages);
+                handleMessage(socket, msg, currentChannel, (ch) => currentChannel = ch);
             }
         } catch (error) {
             console.error('Error handling message:', error);
@@ -67,7 +67,7 @@ io.on('connection', (socket) => {
     });
 });
 
-function handleMessage(socket, msg) {
+function handleMessage(socket, msg, currentChannel, setCurrentChannel) {
     switch(msg.m) {
         case "hi":
             socket.emit('hi', {
@@ -77,7 +77,40 @@ function handleMessage(socket, msg) {
                 token: Math.random().toString(36).substring(2)
             });
             break;
-        // Add other message handlers here
+        case "ch":
+            // Handle channel join request
+            const channelId = msg._id || "lobby";
+            const channel = channels[channelId] || channels.lobby;
+            setCurrentChannel(channel);
+            
+            // Add participant to channel
+            channel.participants.set(socket.id, {
+                id: socket.id,
+                name: "Anonymous",
+                x: 0,
+                y: 0
+            });
+
+            // Join socket.io room
+            socket.join(channelId);
+
+            // Send channel info back to client
+            socket.emit('ch', {
+                ch: {
+                    _id: channel._id,
+                    settings: channel.settings
+                },
+                p: socket.id,
+                ppl: Array.from(channel.participants.values())
+            });
+            break;
+        case "t":
+            // Handle time sync
+            socket.emit('t', {
+                t: Date.now(),
+                e: msg.e
+            });
+            break;
     }
 }
 
