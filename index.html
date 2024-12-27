@@ -8,9 +8,6 @@
         <meta name="description" content="An online piano you can play alone or with others in real-time. MIDI support, 88 keys, velocity sensitive. You can show off your skill or chat while listening to others play."/>
         <link rel="stylesheet" href="screen.css"/>
         <link rel="shortcut icon" type="image/png" href="favicon.png"/>
-        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-        <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
-        <script src="script.js"></script>
     </head>
     <body>
         <div id="social">
@@ -109,13 +106,13 @@
             </div>
         </div>
         <script src="jquery.min.js"></script>
+        <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
         <script src="util.js"></script>
-        <script src="Client.js"></script>
-        <script src="NoteQuota.js"></script>
-        <script src="lame.min.js"></script>
         <script src="Color.js"></script>
+        <script src="NoteQuota.js"></script>
+        <script src="Client.js"></script>
+        <script src="lame.min.js"></script>
         <script src="script.js"></script>
-        <script src="/socket.io/socket.io.js"></script>
         <script>
             var socket = io();
 
@@ -123,19 +120,23 @@
             var form = document.getElementById('form');
             var input = document.getElementById('input');
 
-            form.addEventListener('submit', function(e) {
-                e.preventDefault();
-                if (input.value) {
-                    socket.emit('chat message', input.value);
-                    input.value = '';
-                }
-            });
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    if (input.value) {
+                        socket.emit('chat message', input.value);
+                        input.value = '';
+                    }
+                });
+            }
 
             socket.on('chat message', function(msg) {
-                var item = document.createElement('li');
-                item.textContent = msg;
-                messages.appendChild(item);
-                window.scrollTo(0, document.body.scrollHeight);
+                if (messages) {
+                    var item = document.createElement('li');
+                    item.textContent = msg;
+                    messages.appendChild(item);
+                    window.scrollTo(0, document.body.scrollHeight);
+                }
             });
         </script>
     </body>
