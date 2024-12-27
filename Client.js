@@ -19,7 +19,7 @@ function mixin(obj1, obj2) {
 
 function Client(uri) {
 	EventEmitter.call(this);
-	this.uri = uri;
+	this.uri = uri.replace('ws://', window.location.protocol === 'https:' ? 'wss://' : 'ws://');
 	this.ws = undefined;
 	this.serverTimeOffset = 0;
 	this.user = undefined;

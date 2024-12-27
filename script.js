@@ -1,6 +1,12 @@
 /* eslint-disable */
-// 钢琴
+// Initialize NoteQuota globally
+var gNoteQuota = new NoteQuota(function(points) {
+    // update UI
+    var quota = document.getElementById("quota");
+    if (quota) quota.style.width = (points / NoteQuota.MAX) * 100 + "%";
+});
 
+// 钢琴
 $(function() {
 
 	if (window.location.pathname === '/piano' || window.location.pathname === '/piano/') {
@@ -402,11 +408,30 @@ Rect.prototype.contains = function(x, y) {
 	AudioEngineWeb.prototype.init = function(cb) {
 		AudioEngine.prototype.init.call(this);
 
-		this.context = new AudioContext({latencyHint: 'interactive'});
+		const initAudioContext = () => {
+			if (!this.context) {
+				this.context = new AudioContext({latencyHint: 'interactive'});
+				this.masterGain = this.context.createGain();
+				this.masterGain.connect(this.context.destination);
+				this.masterGain.gain.value = this.volume;
+				
+				if (cb) cb();
+			} else if (this.context.state === 'suspended') {
+				this.context.resume();
+			}
+		};
 
-		this.masterGain = this.context.createGain();
-		this.masterGain.connect(this.context.destination);
-		this.masterGain.gain.value = this.volume;
+		// Initialize audio on first user interaction
+		const userInteractionEvents = ['mousedown', 'keydown', 'touchstart'];
+		const initializeOnInteraction = () => {
+			initAudioContext();
+			userInteractionEvents.forEach(event => {
+				document.removeEventListener(event, initializeOnInteraction);
+			});
+		};
+		userInteractionEvents.forEach(event => {
+			document.addEventListener(event, initializeOnInteraction);
+		});
 
 		this.limiterNode = this.context.createDynamicsCompressor();
 		this.limiterNode.threshold.value = -10;
