@@ -18,9 +18,23 @@ class Server extends WebSocket.Server {
     // Broken Connections
     setInterval(() => {
       this.sockets.forEach(s => {
-        if (s.isAlive == false) return s.ws.terminate();
+        if (!s.isConnected || !s.ws) {
+          this.sockets.delete(s);
+          return;
+        }
+        if (s.isAlive === false) {
+          s.ws.terminate();
+          return;
+        }
         s.isAlive = false;
-        s.ping(() => {}); // eslint-disable-line no-empty-function
+        try {
+          s.ping(() => {
+            s.isAlive = true;
+          });
+        } catch (err) {
+          console.error('Ping error:', err);
+          s.ws.terminate();
+        }
       });
     }, 30000);
   }
