@@ -87,10 +87,11 @@ Client.prototype.connect = function() {
 			path: '/socket.io',
 			autoConnect: true,
 			withCredentials: true,
-			timeout: 20000
+			timeout: 20000,
+			secure: true
 		};
 
-		const serverUrl = 'https://please.up.railway.app';
+		const serverUrl = 'wss://please.up.railway.app';
 		console.log('Connecting to server:', serverUrl);
 
 		if(typeof module !== "undefined") {
