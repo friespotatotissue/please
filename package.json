@@ -1,5 +1,5 @@
 {
-  "name": "multiplayer-piano",
+  "name": "multiplayer-piano-server",
   "version": "1.0.0",
   "description": "Multiplayer Piano Server",
   "main": "server.js",
@@ -7,9 +7,11 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^4.18.2",
-    "socket.io": "^4.5.4",
-    "cors": "^2.8.5"
+    "sha1": "^1.1.1",
+    "socket.io": "^4.7.2",
+    "ws": "^8.14.2"
   },
   "engines": {
     "node": ">=14.0.0"
