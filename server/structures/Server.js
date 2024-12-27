@@ -207,23 +207,61 @@ class Server extends WebSocket.Server {
     }
     if (data.m == 'userset') {
       const p = this.getParticipant(s);
-      if (!p) return;
-      if (data.set.name) {
-        if (data.set.name.length > 250 || !data.set.name.replace(/\s/g, '')) data.set.name = 'Invalid';
-        p.updateUser(this.removeTextHell(data.set.name));
+      if (!p) {
+        console.error('No participant found for userset');
+        return;
       }
+
+      // Validate and sanitize the name
+      if (data.set.name) {
+        const sanitizedName = this.removeTextHell(data.set.name).trim();
+        if (sanitizedName.length > 250 || !sanitizedName) {
+          s.sendObject({
+            m: 'notification',
+            title: 'Error',
+            text: 'Invalid name. Name must not be empty and less than 250 characters.',
+            duration: 3000
+          });
+          return;
+        }
+        
+        // Try to update the participant
+        const success = p.updateUser(sanitizedName, data.set.color);
+        if (!success) {
+          s.sendObject({
+            m: 'notification',
+            title: 'Error',
+            text: 'Failed to update name. Please try again.',
+            duration: 3000
+          });
+          return;
+        }
+      }
+
+      // Update room participant if in a room
       const r = this.getRoom(p.room);
-      if (!r) return;
-      const pR = r.findParticipant(p._id);
-      if (!pR) return;
-      pR.updateUser(data.set.name || 'Anonymous');
-      return this.broadcastTo({
-        m: 'p',
-        color: p.color,
-        id: pR.id,
-        name: p.name,
-        _id: p._id
-      }, r.ppl.map(tpR => tpR._id));
+      if (r) {
+        const pR = r.findParticipant(p._id);
+        if (pR) {
+          pR.updateUser(p.name, p.color);
+          // Broadcast the update to all participants in the room
+          this.broadcastTo({
+            m: 'p',
+            color: p.color,
+            id: pR.id,
+            name: p.name,
+            _id: p._id
+          }, r.ppl.map(tpR => tpR._id));
+        }
+      }
+
+      // Send confirmation to the user
+      s.sendObject({
+        m: 'notification',
+        title: 'Success',
+        text: 'Name updated successfully',
+        duration: 2000
+      });
     }
     if (data.m == 't') {
       return s.sendObject({
